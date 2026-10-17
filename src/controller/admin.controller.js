@@ -1,0 +1,305 @@
+import User from '../models/User.js';
+import Title from '../models/Title.js';
+import Review from '../models/Review.js';
+import Comment from '../models/Comment.js';
+import Watchlist from '../models/Watchlist.js';
+import Featured from '../models/Featured.js';
+import Blog from '../models/Blog.js';
+import BlogComment from '../models/BlogComment.js';
+import CommunityRoom from '../models/CommunityRoom.js';
+import CommunityMessage from '../models/CommunityMessage.js';
+import ApiError from '../utils/ApiError.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import { recalcSiteRating as recalculateRatings } from '../services/title.service.js';
+import { getCrawlerStatus } from '../services/crawler.service.js';
+
+export const getStats = asyncHandler(async (_req, res) => {
+  const [
+    users,
+    activeUsers,
+    admins,
+    titles,
+    movies,
+    tvShows,
+    webSeries,
+    enrichedTitles,
+    userReviews,
+    criticReviews,
+    comments,
+    watchlists,
+    featuredHeroCount,
+    blogsCount,
+    blogCommentsCount,
+    communityRoomsCount,
+    communityMessagesCount,
+    recentUsers,
+    topReviewed,
+    byDecade,
+    byIndustry,
+    byOtt,
+    crawler,
+  ] = await Promise.all([
+    User.countDocuments(),
+    User.countDocuments({ isActive: true }),
+    User.countDocuments({ role: { $in: ['admin', 'superadmin'] } }),
+    Title.countDocuments(),
+    Title.countDocuments({ mediaType: 'movie' }),
+    Title.countDocuments({ mediaType: 'tv' }),
+    Title.countDocuments({ $or: [{ isWebSeries: true }, { subType: 'webseries' }] }),
+    Title.countDocuments({ detailsFetched: true }),
+    Review.countDocuments({ reviewType: 'user' }),
+    Review.countDocuments({ reviewType: 'critic' }),
+    Comment.countDocuments(),
+    Watchlist.countDocuments(),
+    Featured.countDocuments({ isActive: true }),
+    Blog.countDocuments({ status: 'published' }),
+    BlogComment.countDocuments({ isHidden: { $ne: true } }),
+    CommunityRoom.countDocuments({ isActive: true }),
+    CommunityMessage.countDocuments({ isHidden: { $ne: true } }),
+    User.find().sort('-createdAt').limit(8),
+    Title.find({ siteReviewCount: { $gt: 0 } })
+      .sort({ siteReviewCount: -1, siteRating: -1 })
+      .limit(8)
+      .select('tmdbId mediaType subType title year siteRating siteReviewCount criticRating posterPath'),
+    Title.aggregate([
+      { $match: { year: { $gte: 1950 } } },
+      { $project: { decade: { $subtract: ['$year', { $mod: ['$year', 10] }] } } },
+      { $group: { _id: '$decade', count: { $sum: 1 } } },
+      { $sort: { _id: -1 } },
+    ]),
+    Title.aggregate([
+      { $unwind: '$regions' },
+      { $group: { _id: '$regions', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]),
+    Title.aggregate([
+      { $unwind: '$ottProviders' },
+      { $group: { _id: '$ottProviders', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]),
+    getCrawlerStatus(),
+  ]);
+
+  res.json({
+    success: true,
+    counts: {
+      users,
+      activeUsers,
+      deactivatedUsers: users - activeUsers,
+      admins,
+      titles,
+      movies,
+      tvShows,
+      webSeries,
+      enrichedTitles,
+      reviews: userReviews + criticReviews,
+      userReviews,
+      criticReviews,
+      comments,
+      watchlists,
+      featuredHeroCount,
+      blogsCount,
+      blogCommentsCount,
+      communityRoomsCount,
+      communityMessagesCount,
+    },
+    byDecade,
+    byIndustry,
+    byOtt,
+    recentUsers,
+    topReviewed,
+    crawler,
+  });
+});
+
+export const listUsers = asyncHandler(async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+  const filter = {};
+
+  if (req.query.q) {
+    const q = String(req.query.q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    filter.$or = [
+      { name: { $regex: q, $options: 'i' } },
+      { email: { $regex: q, $options: 'i' } },
+    ];
+  }
+  if (req.query.role) filter.role = req.query.role;
+  if (req.query.active !== undefined && req.query.active !== '') {
+    filter.isActive = req.query.active === 'true';
+  }
+
+  const [users, total] = await Promise.all([
+    User.find(filter).sort('-createdAt').skip((page - 1) * limit).limit(limit),
+    User.countDocuments(filter),
+  ]);
+
+  res.json({
+    success: true,
+    users,
+    page,
+    total,
+    totalPages: Math.ceil(total / limit) || 1,
+  });
+});
+
+export const setActive = asyncHandler(async (req, res) => {
+  const { isActive, reason = '' } = req.body;
+  const target = await User.findById(req.params.id);
+  if (!target) throw ApiError.notFound('User not found');
+
+  if (String(target._id) === String(req.user._id)) {
+    throw ApiError.badRequest('You cannot deactivate your own account');
+  }
+  if (target.role === 'superadmin') {
+    throw ApiError.forbidden('Superadmin accounts cannot be deactivated');
+  }
+  if (target.role === 'admin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Only a superadmin can activate or deactivate admin accounts');
+  }
+
+  target.isActive = Boolean(isActive);
+  target.deactivatedReason = target.isActive ? '' : String(reason).slice(0, 200);
+  if (!target.isActive) {
+    target.refreshTokens = [];
+  }
+  await target.save();
+
+  res.json({ success: true, user: target });
+});
+
+export const setRole = asyncHandler(async (req, res) => {
+  const { role } = req.body;
+  if (!['user', 'admin'].includes(role)) {
+    throw ApiError.badRequest("Role must be 'user' or 'admin'");
+  }
+  const target = await User.findById(req.params.id);
+  if (!target) throw ApiError.notFound('User not found');
+  if (target.role === 'superadmin') {
+    throw ApiError.forbidden('Superadmin role cannot be modified');
+  }
+  target.role = role;
+  await target.save();
+  res.json({ success: true, user: target });
+});
+
+export const removeUser = asyncHandler(async (req, res) => {
+  const target = await User.findById(req.params.id);
+  if (!target) throw ApiError.notFound('User not found');
+  if (target.role === 'superadmin') {
+    throw ApiError.forbidden('Superadmin cannot be deleted');
+  }
+  if (target.role === 'admin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Only superadmin can delete an admin account');
+  }
+
+  await Promise.all([
+    target.deleteOne(),
+    Review.deleteMany({ user: target._id }),
+    Comment.deleteMany({ user: target._id }),
+    Watchlist.deleteMany({ user: target._id }),
+  ]);
+
+  res.json({ success: true, message: 'User and associated activity deleted' });
+});
+
+export const listAllReviews = asyncHandler(async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = 25;
+  const filter = {};
+  if (req.query.reviewType) filter.reviewType = req.query.reviewType;
+  if (req.query.hidden !== undefined && req.query.hidden !== '') {
+    filter.isHidden = req.query.hidden === 'true';
+  }
+
+  const [items, total] = await Promise.all([
+    Review.find(filter)
+      .populate('user', 'name email role avatarColor')
+      .sort('-createdAt')
+      .skip((page - 1) * limit)
+      .limit(limit),
+    Review.countDocuments(filter),
+  ]);
+
+  res.json({
+    success: true,
+    reviews: items,
+    page,
+    total,
+    totalPages: Math.ceil(total / limit) || 1,
+  });
+});
+
+export const moderateReview = asyncHandler(async (req, res) => {
+  const review = await Review.findById(req.params.id);
+  if (!review) throw ApiError.notFound('Review not found');
+
+  const { isHidden, isFeatured, spoiler, rating, title, body } = req.body;
+  if (typeof isHidden === 'boolean') review.isHidden = isHidden;
+  if (typeof isFeatured === 'boolean') review.isFeatured = isFeatured;
+  if (typeof spoiler === 'boolean') review.spoiler = spoiler;
+  if (rating !== undefined) review.rating = Math.min(10, Math.max(1, Number(rating)));
+  if (title !== undefined) review.title = String(title).trim();
+  if (body !== undefined) review.body = String(body).trim();
+
+  await review.save();
+  await recalculateRatings(review.type, review.tmdbId);
+
+  res.json({ success: true, review });
+});
+
+export const adminDeleteReview = asyncHandler(async (req, res) => {
+  const review = await Review.findById(req.params.id);
+  if (!review) throw ApiError.notFound('Review not found');
+  const { type, tmdbId } = review;
+  await review.deleteOne();
+  await recalculateRatings(type, tmdbId);
+  res.json({ success: true, message: 'Review removed' });
+});
+
+export const listAllComments = asyncHandler(async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = 30;
+  const filter = {};
+  if (req.query.hidden !== undefined && req.query.hidden !== '') {
+    filter.isHidden = req.query.hidden === 'true';
+  }
+
+  const [items, total] = await Promise.all([
+    Comment.find(filter)
+      .populate('user', 'name email role avatarColor')
+      .sort('-createdAt')
+      .skip((page - 1) * limit)
+      .limit(limit),
+    Comment.countDocuments(filter),
+  ]);
+
+  res.json({
+    success: true,
+    comments: items,
+    page,
+    total,
+    totalPages: Math.ceil(total / limit) || 1,
+  });
+});
+
+export const moderateComment = asyncHandler(async (req, res) => {
+  const comment = await Comment.findById(req.params.id);
+  if (!comment) throw ApiError.notFound('Comment not found');
+
+  const { isHidden, isPinned, spoiler, body } = req.body;
+  if (typeof isHidden === 'boolean') comment.isHidden = isHidden;
+  if (typeof isPinned === 'boolean') comment.isPinned = isPinned;
+  if (typeof spoiler === 'boolean') comment.spoiler = spoiler;
+  if (body !== undefined) comment.body = String(body).trim();
+
+  await comment.save();
+  res.json({ success: true, comment });
+});
+
+export const adminDeleteComment = asyncHandler(async (req, res) => {
+  const comment = await Comment.findById(req.params.id);
+  if (!comment) throw ApiError.notFound('Comment not found');
+  await Comment.deleteMany({ $or: [{ _id: comment._id }, { parent: comment._id }] });
+  res.json({ success: true, message: 'Comment thread deleted' });
+});
