@@ -50,18 +50,32 @@ const CATEGORY_MAP = {
 
 // GET /:type/:categoryOrId (where :type is movie | tv)
 router.get(
-  '/:type(movie|tv)/:categoryOrId',
+  '/:type/:categoryOrId',
   asyncHandler(async (req, res, next) => {
     const { type, categoryOrId } = req.params;
+
+    // Express 5: validate the type inside the handler
+    if (!['movie', 'tv'].includes(type)) {
+      return next();
+    }
+
     if (CATEGORY_MAP[categoryOrId]) {
       const listKey = CATEGORY_MAP[categoryOrId];
       const { extra, sort } = LISTS[listKey]();
-      return res.json(await findTitles({ ...req.query, type }, { extra, sort, listName: listKey }));
+
+      return res.json(
+        await findTitles(
+          { ...req.query, type },
+          { extra, sort, listName: listKey },
+        ),
+      );
     }
+
     if (/^\d+$/.test(categoryOrId)) {
       req.params.tmdbId = categoryOrId;
       return getTitle(req, res, next);
     }
+
     return next();
   }),
 );
