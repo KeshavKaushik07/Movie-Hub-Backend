@@ -10,35 +10,15 @@ import { fromDetails, saveListings, syncGenres } from './title.service.js';
 
 export const OTT_CRAWL_TARGETS = [
   { key: 'netflix', name: 'Netflix', providerIds: '8', watchRegion: 'IN' },
-  {
-    key: 'prime',
-    name: 'Amazon Prime Video',
-    providerIds: '119|9',
-    watchRegion: 'IN',
-  },
-  {
-    key: 'hotstar',
-    name: 'Disney+ Hotstar',
-    providerIds: '122|337',
-    watchRegion: 'IN',
-  },
-  {
-    key: 'jiocinema',
-    name: 'JioCinema',
-    providerIds: '220',
-    watchRegion: 'IN',
-  },
+  { key: 'prime', name: 'Amazon Prime Video', providerIds: '119|9', watchRegion: 'IN' },
+  { key: 'hotstar', name: 'Disney+ Hotstar', providerIds: '122|337', watchRegion: 'IN' },
+  { key: 'jiocinema', name: 'JioCinema', providerIds: '220', watchRegion: 'IN' },
   { key: 'sonyliv', name: 'SonyLIV', providerIds: '237', watchRegion: 'IN' },
   { key: 'zee5', name: 'ZEE5', providerIds: '232', watchRegion: 'IN' },
   { key: 'apple', name: 'Apple TV+', providerIds: '350', watchRegion: 'US' },
   { key: 'hulu', name: 'Hulu', providerIds: '15', watchRegion: 'US' },
   { key: 'max', name: 'Max (HBO)', providerIds: '1899|384', watchRegion: 'US' },
-  {
-    key: 'crunchyroll',
-    name: 'Crunchyroll',
-    providerIds: '283',
-    watchRegion: 'US',
-  },
+  { key: 'crunchyroll', name: 'Crunchyroll', providerIds: '283', watchRegion: 'US' },
   { key: 'mxplayer', name: 'MX Player', providerIds: '515', watchRegion: 'IN' },
 ];
 
@@ -68,17 +48,12 @@ export const requestStop = () => {
 
 export const setTargetCap = (input) => {
   if (typeof input === 'object' && input !== null) {
-    if (Number(input.movieQuota) >= 500)
-      quotas.movie = Number(input.movieQuota);
+    if (Number(input.movieQuota) >= 500) quotas.movie = Number(input.movieQuota);
     if (Number(input.tvQuota) >= 500) quotas.tv = Number(input.tvQuota);
-    if (Number(input.webSeriesQuota) >= 500)
-      quotas.webseries = Number(input.webSeriesQuota);
-    if (Number(input.maxPerYearMovie) >= 100)
-      quotas.maxPerYearMovie = Number(input.maxPerYearMovie);
-    if (Number(input.maxPerYearTv) >= 100)
-      quotas.maxPerYearTv = Number(input.maxPerYearTv);
-    if (Number(input.maxPerYearWebSeries) >= 100)
-      quotas.maxPerYearWebSeries = Number(input.maxPerYearWebSeries);
+    if (Number(input.webSeriesQuota) >= 500) quotas.webseries = Number(input.webSeriesQuota);
+    if (Number(input.maxPerYearMovie) >= 100) quotas.maxPerYearMovie = Number(input.maxPerYearMovie);
+    if (Number(input.maxPerYearTv) >= 100) quotas.maxPerYearTv = Number(input.maxPerYearTv);
+    if (Number(input.maxPerYearWebSeries) >= 100) quotas.maxPerYearWebSeries = Number(input.maxPerYearWebSeries);
     quotas.total =
       Number(input.targetCap) >= 1500
         ? Number(input.targetCap)
@@ -102,10 +77,7 @@ export const getQuotas = () => ({ ...quotas });
 async function getCategoryCounts() {
   const [movies, webSeries, totalTv] = await Promise.all([
     Title.countDocuments({ mediaType: 'movie' }),
-    Title.countDocuments({
-      mediaType: 'tv',
-      $or: [{ isWebSeries: true }, { subType: 'webseries' }],
-    }),
+    Title.countDocuments({ mediaType: 'tv', $or: [{ isWebSeries: true }, { subType: 'webseries' }] }),
     Title.countDocuments({ mediaType: 'tv' }),
   ]);
   const tv = Math.max(0, totalTv - webSeries);
@@ -154,10 +126,7 @@ async function saveAndTag(results, type, tags = {}) {
   if (!results?.length) return 0;
   const saved = await saveListings(results, type, tags);
   const ids = results.map((r) => r.id).filter(Boolean);
-  if (
-    ids.length &&
-    (tags.regionKey || tags.ottKey || tags.listTag || tags.isWebSeries)
-  ) {
+  if (ids.length && (tags.regionKey || tags.ottKey || tags.listTag || tags.isWebSeries)) {
     const update = {};
     const addToSet = {};
     if (tags.regionKey) addToSet.regions = tags.regionKey;
@@ -177,32 +146,18 @@ async function saveAndTag(results, type, tags = {}) {
 /**
  * Phase 1: Crawl & Rotate Trending, Popular, Top Rated, Now Playing, Upcoming
  */
-async function crawlPopularAndTrending(
-  restart = false,
-  { ignoreQuotaCap = false } = {},
-) {
+async function crawlPopularAndTrending(restart = false, { ignoreQuotaCap = false } = {}) {
   let job = await CrawlJob.findOne({ name: 'popular_trending' });
   if (!job || restart) {
     job = await CrawlJob.findOneAndUpdate(
       { name: 'popular_trending' },
-      {
-        status: 'running',
-        currentStep: null,
-        titlesSaved: 0,
-        targetCap: quotas.total,
-        startedAt: new Date(),
-        finishedAt: null,
-        lastError: null,
-      },
+      { status: 'running', currentStep: null, titlesSaved: 0, targetCap: quotas.total, startedAt: new Date(), finishedAt: null, lastError: null },
       { upsert: true, new: true },
     );
   } else if (job.status === 'done' && !ignoreQuotaCap) {
     return;
   } else {
-    await CrawlJob.updateOne(
-      { name: 'popular_trending' },
-      { status: 'running', targetCap: quotas.total, lastError: null },
-    );
+    await CrawlJob.updateOne({ name: 'popular_trending' }, { status: 'running', targetCap: quotas.total, lastError: null });
   }
 
   if (restart || ignoreQuotaCap) {
@@ -213,85 +168,19 @@ async function crawlPopularAndTrending(
       },
       { $pull: { listTags: { $in: ['trending', 'now-playing', 'upcoming'] } } },
     );
-    logger.info(
-      'Crawler: cleared old trending/now-playing/upcoming tags before fresh rotation',
-    );
+    logger.info('Crawler: cleared old trending/now-playing/upcoming tags before fresh rotation');
   }
 
   const endpoints = [
-    {
-      step: 'trending:movie:week',
-      path: '/trending/movie/week',
-      type: 'movie',
-      category: 'movie',
-      listTag: 'trending',
-      maxPages: 15,
-    },
-    {
-      step: 'trending:tv:week',
-      path: '/trending/tv/week',
-      type: 'tv',
-      category: 'webseries',
-      isWebSeries: true,
-      listTag: 'trending',
-      maxPages: 15,
-    },
-    {
-      step: 'popular:movie',
-      path: '/movie/popular',
-      type: 'movie',
-      category: 'movie',
-      listTag: 'popular',
-      maxPages: 20,
-    },
-    {
-      step: 'popular:tv',
-      path: '/tv/popular',
-      type: 'tv',
-      category: 'tv',
-      listTag: 'popular',
-      maxPages: 20,
-    },
-    {
-      step: 'top_rated:movie',
-      path: '/movie/top_rated',
-      type: 'movie',
-      category: 'movie',
-      listTag: 'top-rated',
-      maxPages: 15,
-    },
-    {
-      step: 'top_rated:tv',
-      path: '/tv/top_rated',
-      type: 'tv',
-      category: 'tv',
-      listTag: 'top-rated',
-      maxPages: 15,
-    },
-    {
-      step: 'now_playing:movie',
-      path: '/movie/now_playing',
-      type: 'movie',
-      category: 'movie',
-      listTag: 'now-playing',
-      maxPages: 15,
-    },
-    {
-      step: 'upcoming:movie',
-      path: '/movie/upcoming',
-      type: 'movie',
-      category: 'movie',
-      listTag: 'upcoming',
-      maxPages: 15,
-    },
-    {
-      step: 'on_the_air:tv',
-      path: '/tv/on_the_air',
-      type: 'tv',
-      category: 'tv',
-      listTag: 'now-playing',
-      maxPages: 15,
-    },
+    { step: 'trending:movie:week', path: '/trending/movie/week', type: 'movie', category: 'movie', listTag: 'trending', maxPages: 15 },
+    { step: 'trending:tv:week', path: '/trending/tv/week', type: 'tv', category: 'webseries', isWebSeries: true, listTag: 'trending', maxPages: 15 },
+    { step: 'popular:movie', path: '/movie/popular', type: 'movie', category: 'movie', listTag: 'popular', maxPages: 20 },
+    { step: 'popular:tv', path: '/tv/popular', type: 'tv', category: 'tv', listTag: 'popular', maxPages: 20 },
+    { step: 'top_rated:movie', path: '/movie/top_rated', type: 'movie', category: 'movie', listTag: 'top-rated', maxPages: 15 },
+    { step: 'top_rated:tv', path: '/tv/top_rated', type: 'tv', category: 'tv', listTag: 'top-rated', maxPages: 15 },
+    { step: 'now_playing:movie', path: '/movie/now_playing', type: 'movie', category: 'movie', listTag: 'now-playing', maxPages: 15 },
+    { step: 'upcoming:movie', path: '/movie/upcoming', type: 'movie', category: 'movie', listTag: 'upcoming', maxPages: 15 },
+    { step: 'on_the_air:tv', path: '/tv/on_the_air', type: 'tv', category: 'tv', listTag: 'now-playing', maxPages: 15 },
   ];
 
   let startIdx = 0;
@@ -317,21 +206,12 @@ async function crawlPopularAndTrending(
     }
     await CrawlJob.updateOne(
       { name: 'popular_trending' },
-      {
-        currentStep: ep.step,
-        $inc: { titlesSaved: savedInStep },
-        lastActivityAt: new Date(),
-      },
+      { currentStep: ep.step, $inc: { titlesSaved: savedInStep }, lastActivityAt: new Date() },
     );
-    logger.info(
-      `Crawler [Popular/Trending]: ${ep.step} processed (${savedInStep} items)`,
-    );
+    logger.info(`Crawler [Popular/Trending]: ${ep.step} processed (${savedInStep} items)`);
   }
 
-  await CrawlJob.updateOne(
-    { name: 'popular_trending' },
-    { status: 'done', finishedAt: new Date() },
-  );
+  await CrawlJob.updateOne({ name: 'popular_trending' }, { status: 'done', finishedAt: new Date() });
 }
 
 /** Phase 2: Crawl Top OTT Catalogs (Web Series + OTT Movies across Netflix, Prime, Hotstar, JioCinema, SonyLIV, ZEE5, Apple TV+, etc.) */
@@ -340,43 +220,20 @@ async function crawlOttProviders(restart = false) {
   if (!job || restart) {
     job = await CrawlJob.findOneAndUpdate(
       { name: 'ott' },
-      {
-        status: 'running',
-        currentStep: null,
-        titlesSaved: 0,
-        targetCap: quotas.total,
-        startedAt: new Date(),
-        finishedAt: null,
-        lastError: null,
-      },
+      { status: 'running', currentStep: null, titlesSaved: 0, targetCap: quotas.total, startedAt: new Date(), finishedAt: null, lastError: null },
       { upsert: true, new: true },
     );
   } else if (job.status === 'done') {
     return;
   } else {
-    await CrawlJob.updateOne(
-      { name: 'ott' },
-      { status: 'running', targetCap: quotas.total, lastError: null },
-    );
+    await CrawlJob.updateOne({ name: 'ott' }, { status: 'running', targetCap: quotas.total, lastError: null });
   }
 
   const maxPagesPerOtt = 15;
   const steps = [];
   for (const ott of OTT_CRAWL_TARGETS) {
-    steps.push({
-      step: `ott:${ott.key}:webseries`,
-      ott,
-      type: 'tv',
-      category: 'webseries',
-      isWebSeries: true,
-    });
-    steps.push({
-      step: `ott:${ott.key}:movie`,
-      ott,
-      type: 'movie',
-      category: 'movie',
-      isWebSeries: false,
-    });
+    steps.push({ step: `ott:${ott.key}:webseries`, ott, type: 'tv', category: 'webseries', isWebSeries: true });
+    steps.push({ step: `ott:${ott.key}:movie`, ott, type: 'movie', category: 'movie', isWebSeries: false });
   }
 
   let startIdx = 0;
@@ -407,30 +264,16 @@ async function crawlOttProviders(restart = false) {
     }
     await CrawlJob.updateOne(
       { name: 'ott' },
-      {
-        currentStep: s.step,
-        $inc: { titlesSaved: saved },
-        lastActivityAt: new Date(),
-      },
+      { currentStep: s.step, $inc: { titlesSaved: saved }, lastActivityAt: new Date() },
     );
     logger.info(`Crawler [OTT]: ${s.step} done (${saved} items)`);
   }
 
-  await CrawlJob.updateOne(
-    { name: 'ott' },
-    { status: 'done', finishedAt: new Date() },
-  );
+  await CrawlJob.updateOne({ name: 'ott' }, { status: 'done', finishedAt: new Date() });
 }
 
 /** Helper to crawl a single discover slice (1–4 pages max per slice per year) */
-async function crawlDiscoverSlice({
-  type,
-  category,
-  year,
-  params,
-  tags,
-  sliceLimit,
-}) {
+async function crawlDiscoverSlice({ type, category, year, params, tags, sliceLimit }) {
   const maxPages = Math.min(Math.ceil(sliceLimit / PAGE_SIZE), 10);
   let page = 1;
   let totalPages = 1;
@@ -474,10 +317,7 @@ async function crawlCategoryForYear(category, year) {
       ? quotas.maxPerYearWebSeries
       : quotas.maxPerYearTv;
 
-  const perRegionSlice = Math.min(
-    Number(env.crawler?.perRegionLimit) || 60,
-    80,
-  );
+  const perRegionSlice = Math.min(Number(env.crawler?.perRegionLimit) || 60, 80);
   const perGenreSlice = Math.min(Number(env.crawler?.perGenreLimit) || 60, 80);
   const perOttSlice = Math.min(Number(env.crawler?.perOttLimit) || 80, 100);
 
@@ -485,8 +325,7 @@ async function crawlCategoryForYear(category, year) {
 
   if (isWeb) {
     for (const ott of OTT_CRAWL_TARGETS) {
-      if (savedThisYear >= yearCap || !(await hasCategoryRoom('webseries')))
-        break;
+      if (savedThisYear >= yearCap || !(await hasCategoryRoom('webseries'))) break;
       const budgetLeft = Math.min(perOttSlice, yearCap - savedThisYear);
       savedThisYear += await crawlDiscoverSlice({
         type: 'tv',
@@ -501,8 +340,7 @@ async function crawlCategoryForYear(category, year) {
       });
     }
     for (const r of REGIONS.slice(0, 10)) {
-      if (savedThisYear >= yearCap || !(await hasCategoryRoom('webseries')))
-        break;
+      if (savedThisYear >= yearCap || !(await hasCategoryRoom('webseries'))) break;
       const budgetLeft = Math.min(perRegionSlice, yearCap - savedThisYear);
       savedThisYear += await crawlDiscoverSlice({
         type: 'tv',
@@ -519,9 +357,7 @@ async function crawlCategoryForYear(category, year) {
       });
     }
   } else {
-    const genres = await Genre.find({ mediaTypes: tmdbType }).distinct(
-      'tmdbId',
-    );
+    const genres = await Genre.find({ mediaTypes: tmdbType }).distinct('tmdbId');
 
     for (const r of REGIONS) {
       if (savedThisYear >= yearCap || !(await hasCategoryRoom(category))) break;
@@ -574,10 +410,7 @@ async function crawlCategoryForYear(category, year) {
  */
 async function crawlInterleavedByYear(restart = false) {
   const newestYear = new Date().getFullYear() + 1;
-  const oldestYear = Math.min(
-    env.crawler?.movieFromYear || 1975,
-    env.crawler?.tvFromYear || 1985,
-  );
+  const oldestYear = Math.min(env.crawler?.movieFromYear || 1975, env.crawler?.tvFromYear || 1985);
 
   let masterJob = await CrawlJob.findOne({ name: 'interleaved' });
   if (!masterJob || restart) {
@@ -598,23 +431,12 @@ async function crawlInterleavedByYear(restart = false) {
     for (const cat of ['movie', 'webseries', 'tv']) {
       await CrawlJob.findOneAndUpdate(
         { name: cat },
-        {
-          status: 'running',
-          currentYear: newestYear,
-          titlesSaved: 0,
-          targetCap: quotas[cat],
-          startedAt: new Date(),
-          finishedAt: null,
-          lastError: null,
-        },
+        { status: 'running', currentYear: newestYear, titlesSaved: 0, targetCap: quotas[cat], startedAt: new Date(), finishedAt: null, lastError: null },
         { upsert: true },
       );
     }
   } else {
-    await CrawlJob.updateOne(
-      { name: 'interleaved' },
-      { status: 'running', targetCap: quotas.total, lastError: null },
-    );
+    await CrawlJob.updateOne({ name: 'interleaved' }, { status: 'running', targetCap: quotas.total, lastError: null });
   }
 
   const startYear = Math.min(masterJob.currentYear ?? newestYear, newestYear);
@@ -623,18 +445,10 @@ async function crawlInterleavedByYear(restart = false) {
     if (stopRequested) throw new StopSignal('Stopped by superadmin');
     const counts = await getCategoryCounts();
     if (counts.total >= quotas.total) {
-      throw new AllQuotasFullSignal(
-        `Reached 1-Lakh (${quotas.total.toLocaleString()}) total cap`,
-      );
+      throw new AllQuotasFullSignal(`Reached 1-Lakh (${quotas.total.toLocaleString()}) total cap`);
     }
-    if (
-      counts.movie >= quotas.movie &&
-      counts.tv >= quotas.tv &&
-      counts.webseries >= quotas.webseries
-    ) {
-      throw new AllQuotasFullSignal(
-        'All category quotas (Movies, TV Shows, Web Series) are full!',
-      );
+    if (counts.movie >= quotas.movie && counts.tv >= quotas.tv && counts.webseries >= quotas.webseries) {
+      throw new AllQuotasFullSignal('All category quotas (Movies, TV Shows, Web Series) are full!');
     }
 
     const mSaved = await crawlCategoryForYear('movie', year);
@@ -664,11 +478,7 @@ async function crawlInterleavedByYear(restart = false) {
 
 /** Phase 4: Enrich top Movies, TV Shows & Web Series with budget, box office, trailers & songs */
 async function enrichPopularTitles(maxEnrich = 300) {
-  const pending = {
-    detailsFetched: { $ne: true },
-    detailsFailed: { $ne: true },
-    voteCount: { $gte: env.crawler?.enrichMinVotes || 100 },
-  };
+  const pending = { detailsFetched: { $ne: true }, detailsFailed: { $ne: true }, voteCount: { $gte: env.crawler?.enrichMinVotes || 100 } };
   let enriched = 0;
   while (enriched < maxEnrich) {
     if (stopRequested) throw new StopSignal('Stopped by superadmin');
@@ -679,16 +489,10 @@ async function enrichPopularTitles(maxEnrich = 300) {
       const filter = { mediaType: t.mediaType, tmdbId: t.tmdbId };
       try {
         const data = await fetchPage(`/${t.mediaType}/${t.tmdbId}`, {
-          append_to_response:
-            'credits,videos,images,watch/providers,reviews,release_dates,content_ratings,keywords,external_ids',
+          append_to_response: 'credits,videos,images,watch/providers,reviews,release_dates,content_ratings,keywords,external_ids',
           language: 'en-US',
         });
-        await Title.updateOne(
-          filter,
-          data
-            ? { $set: fromDetails(data, t.mediaType, t) }
-            : { detailsFailed: true },
-        );
+        await Title.updateOne(filter, data ? { $set: fromDetails(data, t.mediaType, t) } : { detailsFailed: true });
         enriched += 1;
       } catch (err) {
         if (err instanceof StopSignal) throw err;
@@ -699,12 +503,7 @@ async function enrichPopularTitles(maxEnrich = 300) {
 }
 
 /** Starts or resumes the Quota-Balanced 1-Lakh Crawler in the background. */
-export function startCrawl({
-  restart = false,
-  targetCap,
-  quotasConfig,
-  mode = 'full',
-} = {}) {
+export function startCrawl({ restart = false, targetCap, quotasConfig, mode = 'full' } = {}) {
   if (running) throw ApiError.conflict('The crawler is already running');
   if (quotasConfig) setTargetCap(quotasConfig);
   else if (targetCap) setTargetCap(targetCap);
@@ -712,7 +511,7 @@ export function startCrawl({
   running = true;
   stopRequested = false;
 
-  return (async () => {
+  (async () => {
     try {
       await syncGenres();
 
@@ -726,9 +525,7 @@ export function startCrawl({
         await crawlPopularAndTrending(restart);
         await crawlOttProviders(restart);
         await crawlInterleavedByYear(restart);
-        logger.info(
-          'Crawler: enriching popular titles with budget, collection, trailers & songs...',
-        );
+        logger.info('Crawler: enriching popular titles with budget, collection, trailers & songs...');
         await enrichPopularTitles(300);
       }
       logger.success('Crawler: finished successfully');
@@ -737,24 +534,14 @@ export function startCrawl({
         logger.success(`Crawler: ${err.message}`);
         await CrawlJob.updateMany(
           { status: 'running' },
-          {
-            status: 'capped_at_target',
-            finishedAt: new Date(),
-            lastError: err.message,
-          },
+          { status: 'capped_at_target', finishedAt: new Date(), lastError: err.message },
         );
       } else if (err instanceof StopSignal) {
         logger.warn('Crawler stopped by superadmin');
-        await CrawlJob.updateMany(
-          { status: 'running' },
-          { status: 'stopped', lastError: err.message },
-        );
+        await CrawlJob.updateMany({ status: 'running' }, { status: 'stopped', lastError: err.message });
       } else {
         logger.error('Crawler failed:', err.message);
-        await CrawlJob.updateMany(
-          { status: 'running' },
-          { status: 'failed', lastError: err.message },
-        );
+        await CrawlJob.updateMany({ status: 'running' }, { status: 'failed', lastError: err.message });
       }
     } finally {
       running = false;
@@ -769,9 +556,7 @@ async function refreshRecentYears() {
   stopRequested = false;
   try {
     await crawlPopularAndTrending(true, { ignoreQuotaCap: true });
-    logger.success(
-      'Crawler: rotated fresh Trending, Popular, Now Playing & Upcoming titles',
-    );
+    logger.success('Crawler: rotated fresh Trending, Popular, Now Playing & Upcoming titles');
   } catch (err) {
     if (!(err instanceof StopSignal) && !(err instanceof AllQuotasFullSignal)) {
       logger.warn('Crawler refresh failed:', err.message);
@@ -782,11 +567,7 @@ async function refreshRecentYears() {
   }
 }
 
-export const startScheduler = () =>
-  setInterval(
-    refreshRecentYears,
-    (env.crawler?.refreshHours || 24) * 3_600_000,
-  ).unref();
+export const startScheduler = () => setInterval(refreshRecentYears, (env.crawler?.refreshHours || 24) * 3_600_000).unref();
 
 export async function getCrawlerStatus() {
   const [jobs, counts, enrichedCount, byRegion, byOtt] = await Promise.all([
@@ -795,12 +576,7 @@ export async function getCrawlerStatus() {
     Title.countDocuments({ detailsFetched: true }),
     Title.aggregate([
       { $unwind: '$regions' },
-      {
-        $group: {
-          _id: { region: '$regions', type: '$mediaType' },
-          count: { $sum: 1 },
-        },
-      },
+      { $group: { _id: { region: '$regions', type: '$mediaType' }, count: { $sum: 1 } } },
     ]),
     Title.aggregate([
       { $unwind: '$ottProviders' },
@@ -830,20 +606,11 @@ export async function getCrawlerStatus() {
       maxPerYearTv: quotas.maxPerYearTv,
       maxPerYearWebSeries: quotas.maxPerYearWebSeries,
     },
-    progressPercent: Math.min(
-      100,
-      Math.round((counts.total / quotas.total) * 1000) / 10,
-    ),
+    progressPercent: Math.min(100, Math.round((counts.total / quotas.total) * 1000) / 10),
     quotaProgress: {
-      moviePercent: Math.min(
-        100,
-        Math.round((counts.movie / quotas.movie) * 1000) / 10,
-      ),
+      moviePercent: Math.min(100, Math.round((counts.movie / quotas.movie) * 1000) / 10),
       tvPercent: Math.min(100, Math.round((counts.tv / quotas.tv) * 1000) / 10),
-      webSeriesPercent: Math.min(
-        100,
-        Math.round((counts.webseries / quotas.webseries) * 1000) / 10,
-      ),
+      webSeriesPercent: Math.min(100, Math.round((counts.webseries / quotas.webseries) * 1000) / 10),
     },
     limits: {
       maxTotalTitles: quotas.total,

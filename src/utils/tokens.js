@@ -18,15 +18,18 @@ export const verifyRefresh = (token) => {
   }
 };
 
-const cookieOpts = () => ({
+const cookieOpts = (path = '/') => ({
   httpOnly: true,
   secure: env.isProd,
   sameSite: env.cookie.sameSite,
   domain: env.cookie.domain,
-  path: `${API_PREFIX}/auth`,
+  path,
 });
 
-export const clearRefreshCookie = (res) => res.clearCookie(COOKIES.REFRESH, cookieOpts());
+export const clearRefreshCookie = (res) => {
+  res.clearCookie(COOKIES.REFRESH, cookieOpts('/'));
+  res.clearCookie(COOKIES.REFRESH, cookieOpts(`${API_PREFIX}/auth`));
+};
 
 export const issueTokens = async (user, res) => {
   const access = signAccess(user);
@@ -36,8 +39,8 @@ export const issueTokens = async (user, res) => {
   const expiresAt = new Date(Date.now() + env.jwt.refreshDays * 864e5);
   await User.updateOne(
     { _id: user._id },
-    { $push: { refreshTokens: { $each: [{ tokenHash: hash(refresh), expiresAt }], $slice: -5 } } },
+    { $push: { refreshTokens: { $each: [{ tokenHash: hash(refresh), expiresAt }], $slice: -25 } } },
   );
-  res.cookie(COOKIES.REFRESH, refresh, { ...cookieOpts(), maxAge: env.jwt.refreshDays * 864e5 });
+  res.cookie(COOKIES.REFRESH, refresh, { ...cookieOpts('/'), maxAge: env.jwt.refreshDays * 864e5 });
   return { access, refresh };
 };

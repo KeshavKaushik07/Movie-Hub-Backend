@@ -71,6 +71,37 @@ export async function syncGenres() {
 }
 
 // Estimate Box Office verdict automatically when budget & revenue exist
+
+// Deterministic fallback budget & revenue estimator when TMDB returns 0
+export const estimateTitleFinancials = (t) => {
+  const rawBudget = Number(t?.budget) || 0;
+  const rawRevenue = Number(t?.boxOffice?.worldwideCollection || t?.revenue) || 0;
+  if (rawBudget > 0 && rawRevenue > 0) {
+    return { budget: rawBudget, revenue: rawRevenue, isEstimated: false };
+  }
+  const seed = Number(t?.tmdbId || t?.id || 101);
+  const pop = Math.max(5, Number(t?.popularity) || 18);
+  const rating = Math.max(5, Number(t?.voteAverage || t?.siteRating) || 6.8);
+  const votes = Math.max(10, Number(t?.voteCount) || 80);
+  const lang = String(t?.originalLanguage || 'hi').toLowerCase();
+
+  // Base scale in USD (which converts to ₹ Crores on frontend: $1M = ₹8.35 Cr)
+  const isIndian = ['hi', 'te', 'ta', 'ml', 'kn', 'mr', 'bn', 'pa', 'gu'].includes(lang);
+  const baseUsd = isIndian
+    ? Math.round((4_500_000 + (seed % 19) * 1_200_000 + Math.min(pop, 120) * 180_000) / 100_000) * 100_000
+    : Math.round((18_000_000 + (seed % 23) * 3_500_000 + Math.min(pop, 150) * 450_000) / 100_000) * 100_000;
+
+  const estBudget = rawBudget > 0 ? rawBudget : baseUsd;
+  const multiplier = Math.max(0.85, (rating / 6.2) * (1.15 + ((seed % 11) * 0.14)) + Math.min(votes / 4000, 1.2));
+  const estRevenue = rawRevenue > 0 ? rawRevenue : Math.round((estBudget * multiplier) / 100_000) * 100_000;
+
+  return {
+    budget: estBudget,
+    revenue: estRevenue,
+    isEstimated: rawBudget === 0 || rawRevenue === 0,
+  };
+};
+
 export const computeVerdict = (budget = 0, revenue = 0, existingVerdict = '') => {
   if (existingVerdict) return existingVerdict;
   if (!revenue || revenue <= 0) return '';
@@ -550,8 +581,9 @@ export const shapeTitle = (t) => {
     siteReviewCount: t.siteReviewCount || 0,
     criticRating: t.criticRating || 0,
     criticReviewCount: t.criticReviewCount || 0,
-    budget: t.budget || 0,
-    revenue: t.revenue || 0,
+    budget: t.budget > 0 ? t.budget : estimateTitleFinancials(t).budget,
+    revenue: (t.boxOffice?.worldwideCollection || t.revenue) > 0 ? (t.boxOffice?.worldwideCollection || t.revenue) : estimateTitleFinancials(t).revenue,
+     financialEstimated: !(t.budget > 0 && (t.boxOffice?.worldwideCollection || t.revenue) > 0),
     verdict: t.boxOffice?.verdict || computeVerdict(t.budget, t.revenue),
     ottProviders: t.ottProviders || [],
     regions: t.regions || [],
@@ -599,8 +631,9 @@ export const shapeDetail = (t) => {
     photoUrl: img(c.profilePath, 'w185'),
   }));
 
-  const budget = t.budget || 0;
-  const revenue = t.boxOffice?.worldwideCollection || t.revenue || 0;
+  const estFin = estimateTitleFinancials(t);
+  const budget = t.budget > 0 ? t.budget : estFin.budget;
+  const revenue = (t.boxOffice?.worldwideCollection || t.revenue) > 0 ? (t.boxOffice?.worldwideCollection || t.revenue) : estFin.revenue;
   const profit = revenue > 0 && budget > 0 ? revenue - budget : 0;
   const roiPercent = budget > 0 && revenue > 0 ? Math.round(((revenue - budget) / budget) * 100) : 0;
 

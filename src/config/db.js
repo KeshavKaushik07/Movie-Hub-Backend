@@ -1,29 +1,13 @@
-import dns from 'node:dns';
 import mongoose from 'mongoose';
 import env from './env.js';
 import { logger } from '../utils/logger.js';
 
-// Workaround for Node.js Windows DNS SRV issue
-dns.setServers(['8.8.8.8', '1.1.1.1']);
-
 export const connectDB = async () => {
-  mongoose.connection.on('disconnected', () =>
-    logger.warn('MongoDB disconnected'),
-  );
-
-  mongoose.connection.on('reconnected', () =>
-    logger.success('MongoDB reconnected'),
-  );
-
-  mongoose.connection.on('error', (err) =>
-    logger.error('MongoDB error:', err.message),
-  );
-
+  mongoose.connection.on('disconnected', () => logger.warn('MongoDB disconnected'));
+  mongoose.connection.on('reconnected', () => logger.success('MongoDB reconnected'));
+  mongoose.connection.on('error', (err) => logger.error('MongoDB error:', err.message));
   await mongoose.connect(env.mongoUri);
-
-  logger.success(
-    `MongoDB connected: ${mongoose.connection.host}/${mongoose.connection.name}`,
-  );
+  logger.success(`MongoDB connected: ${mongoose.connection.host}/${mongoose.connection.name}`);
 };
 
 export const disconnectDB = () => mongoose.disconnect();

@@ -8,6 +8,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 const extractToken = (req) => {
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) return header.slice(7).trim();
+  if (req.query?.token && typeof req.query.token === 'string') return req.query.token.trim();
   return req.cookies?.[COOKIES.ACCESS] || null;
 };
 
@@ -16,7 +17,11 @@ const authenticate = async (token) => {
   try {
     payload = jwt.verify(token, env.jwt.accessSecret);
   } catch (err) {
-    throw ApiError.unauthorized(err.name === 'TokenExpiredError' ? 'Access token expired' : 'Invalid access token');
+    const e = ApiError.unauthorized(
+      err.name === 'TokenExpiredError' ? 'Access token expired' : 'Invalid access token',
+    );
+    e.isTokenExpired = err.name === 'TokenExpiredError';
+    throw e;
   }
   const user = await User.findById(payload.sub);
   if (!user) throw ApiError.unauthorized('User no longer exists');
@@ -32,14 +37,21 @@ export const protect = asyncHandler(async (req, _res, next) => {
   next();
 });
 
-/** Sets req.user if a valid token is sent, but never blocks (guests allowed). */
+/**
+ * Sets req.user if a valid token is sent, but allows guests when no token is sent.
+ * If an expired Bearer token is sent on an XHR request, returns 401 so the frontend
+ * interceptor silently refreshes the token instead of dropping the user to guest mid-chat!
+ */
 export const optionalAuth = asyncHandler(async (req, _res, next) => {
   const token = extractToken(req);
   if (token) {
     try {
       req.user = await authenticate(token);
-    } catch {
-      /* treated as guest */
+    } catch (err) {
+      if (err.isTokenExpired && req.headers.authorization) {
+        throw err;
+      }
+      /* otherwise treated as guest */
     }
   }
   next();

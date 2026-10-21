@@ -21,16 +21,9 @@ const router = Router();
 router.get(
   '/trending/:type/:window',
   asyncHandler(async (req, res) => {
-    const type = ['movie', 'tv'].includes(req.params.type)
-      ? req.params.type
-      : 'movie';
+    const type = ['movie', 'tv'].includes(req.params.type) ? req.params.type : 'movie';
     const { extra, sort } = LISTS.trending();
-    res.json(
-      await findTitles(
-        { ...req.query, type },
-        { extra, sort, listName: 'trending' },
-      ),
-    );
+    res.json(await findTitles({ ...req.query, type }, { extra, sort, listName: 'trending' }));
   }),
 );
 
@@ -39,9 +32,7 @@ router.get(
   '/search/:type',
   asyncHandler(async (req, res) => {
     const q = String(req.query.q || req.query.query || '').trim();
-    const type = ['movie', 'tv'].includes(req.params.type)
-      ? req.params.type
-      : undefined;
+    const type = ['movie', 'tv'].includes(req.params.type) ? req.params.type : undefined;
     res.json(await findTitles({ ...req.query, type, q }));
   }),
 );
@@ -59,30 +50,13 @@ const CATEGORY_MAP = {
 
 // GET /:type/:categoryOrId (where :type is movie | tv)
 router.get(
-  '/:type/:categoryOrId',
-  (req, res, next) => {
-    const { type } = req.params;
-
-    if (!['movie', 'tv'].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Type must be movie or tv',
-      });
-    }
-
-    next();
-  },
+  '/:type(movie|tv)/:categoryOrId',
   asyncHandler(async (req, res, next) => {
     const { type, categoryOrId } = req.params;
     if (CATEGORY_MAP[categoryOrId]) {
       const listKey = CATEGORY_MAP[categoryOrId];
       const { extra, sort } = LISTS[listKey]();
-      return res.json(
-        await findTitles(
-          { ...req.query, type },
-          { extra, sort, listName: listKey },
-        ),
-      );
+      return res.json(await findTitles({ ...req.query, type }, { extra, sort, listName: listKey }));
     }
     if (/^\d+$/.test(categoryOrId)) {
       req.params.tmdbId = categoryOrId;

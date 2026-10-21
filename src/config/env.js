@@ -6,7 +6,6 @@ const e = process.env;
 const num = (v, fallback) => (Number.isFinite(Number(v)) && v !== undefined && v !== '' ? Number(v) : fallback);
 
 const env = {
-  nodeEnv: e.NODE_ENV || 'development',
   isProd: e.NODE_ENV === 'production',
   port: num(e.PORT, 5000),
   mongoUri: e.MONGO_URI,
@@ -15,8 +14,8 @@ const env = {
   jwt: {
     accessSecret: e.JWT_ACCESS_SECRET,
     refreshSecret: e.JWT_REFRESH_SECRET,
-    accessTtl: `${num(e.ACCESS_TOKEN_TTL_MINUTES, 15)}m`,
-    refreshDays: num(e.REFRESH_TOKEN_TTL_DAYS, 7),
+    accessTtl: `${num(e.ACCESS_TOKEN_TTL_MINUTES, 120)}m`,
+    refreshDays: num(e.REFRESH_TOKEN_TTL_DAYS, 30),
   },
   cookie: { sameSite: e.COOKIE_SAMESITE || 'lax', domain: e.COOKIE_DOMAIN || undefined },
   bcryptRounds: num(e.BCRYPT_ROUNDS, 12),
@@ -30,21 +29,21 @@ const env = {
   },
   crawler: {
     onBoot: e.CRAWL_ON_BOOT !== 'false',
-    maxTitles: num(e.CRAWL_MAX_TITLES, 100_000),              // 1 Lakh (100,000) total cap
-    movieQuota: num(e.CRAWL_MOVIE_QUOTA, 50_000),             // 50,000 Movies quota
-    tvQuota: num(e.CRAWL_TV_QUOTA, 25_000),                   // 25,000 TV Shows quota
-    webSeriesQuota: num(e.CRAWL_WEBSERIES_QUOTA, 25_000),     // 25,000 Web Series (OTT) quota
-    maxPerYearMovie: num(e.CRAWL_MAX_PER_YEAR_MOVIE, 1200),   // Max movies fetched from a single year (prevents 16,000 from 1 year!)
-    maxPerYearTv: num(e.CRAWL_MAX_PER_YEAR_TV, 700),          // Max TV shows fetched from a single year
-    maxPerYearWebSeries: num(e.CRAWL_MAX_PER_YEAR_WEBSERIES, 700), // Max Web Series fetched from a single year
+    maxTitles: num(e.CRAWL_MAX_TITLES, 100_000),
+    movieQuota: num(e.CRAWL_MOVIE_QUOTA, 50_000),
+    tvQuota: num(e.CRAWL_TV_QUOTA, 25_000),
+    webSeriesQuota: num(e.CRAWL_WEBSERIES_QUOTA, 25_000),
+    maxPerYearMovie: num(e.CRAWL_MAX_PER_YEAR_MOVIE, 1200),
+    maxPerYearTv: num(e.CRAWL_MAX_PER_YEAR_TV, 700),
+    maxPerYearWebSeries: num(e.CRAWL_MAX_PER_YEAR_WEBSERIES, 700),
     delayMs: num(e.CRAWL_DELAY_MS, 60),
     movieFromYear: num(e.CRAWL_MOVIE_FROM_YEAR, 1975),
     tvFromYear: num(e.CRAWL_TV_FROM_YEAR, 1985),
     minVotes: num(e.CRAWL_MIN_VOTES, 0),
     enrichMinVotes: num(e.ENRICH_MIN_VOTES, 100),
-    perGenreLimit: num(e.CRAWL_PER_GENRE_LIMIT, 60),          // 60 top titles per genre per year (3 pages)
-    perRegionLimit: num(e.CRAWL_PER_REGION_LIMIT, 60),        // 60 top titles per industry per year (3 pages)
-    perOttLimit: num(e.CRAWL_PER_OTT_LIMIT, 80),              // 80 top titles per OTT provider per year (4 pages)
+    perGenreLimit: num(e.CRAWL_PER_GENRE_LIMIT, 60),
+    perRegionLimit: num(e.CRAWL_PER_REGION_LIMIT, 60),
+    perOttLimit: num(e.CRAWL_PER_OTT_LIMIT, 80),
     refreshHours: num(e.CRAWL_REFRESH_HOURS, 24),
   },
 };

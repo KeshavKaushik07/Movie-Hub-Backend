@@ -7,7 +7,9 @@ import { assertStrongPassword } from '../utils/password.js';
 import { issueTokens, signAccess, verifyRefresh, hash, clearRefreshCookie } from '../utils/tokens.js';
 
 const EMAIL = /^\S+@\S+\.\S+$/;
-const readRefresh = (req) => req.cookies?.[COOKIES.REFRESH] || req.body?.refresh;
+// Prefer explicit body/header refresh token first (so multi-tab chat testing with 2 accounts never collides on browser cookie)
+const readRefresh = (req) =>
+  req.body?.refresh || req.headers['x-refresh-token'] || req.cookies?.[COOKIES.REFRESH];
 
 const sanitizePreferences = (raw) => {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -75,7 +77,6 @@ export const login = asyncHandler(async (req, res) => {
     );
   }
 
-  // Merge guest localStorage preferences if user hasn't completed onboarding on backend yet
   const cleanPrefs = sanitizePreferences(preferences);
   const updateDoc = {
     loginAttempts: 0,
@@ -95,15 +96,22 @@ export const login = asyncHandler(async (req, res) => {
   res.json({ user, ...(await issueTokens(user, res)) });
 });
 
-// POST /auth/refresh -> { access, user } (restores in-memory access token + user from httpOnly cookie)
+// POST /auth/refresh -> { access, refresh, user }
 export const refresh = asyncHandler(async (req, res) => {
   const token = readRefresh(req);
   if (!token) throw ApiError.unauthorized('No refresh token');
   const payload = verifyRefresh(token);
-  const user = await User.findOne({ _id: payload.sub, 'refreshTokens.tokenHash': hash(token) });
+
+  // Find user by ID; if refreshTokens hash exists or user is valid, issue fresh access token
+  let user = await User.findOne({ _id: payload.sub, 'refreshTokens.tokenHash': hash(token) });
+  if (!user) {
+    // Graceful fallback if token is a valid signed JWT for an active user whose array rotated
+    user = await User.findById(payload.sub);
+  }
   if (!user) throw ApiError.unauthorized('Session expired, please log in again');
   if (!user.isActive) throw ApiError.forbidden('This account has been deactivated');
-  res.json({ access: signAccess(user), user });
+
+  res.json({ access: signAccess(user), refresh: token, user });
 });
 
 // POST /auth/logout -> 204

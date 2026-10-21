@@ -12,8 +12,18 @@ const app = express();
 if (env.isProd) app.set('trust proxy', 1);
 
 app.use(helmet());
-app.use(cors({ origin: env.origins, credentials: true }));
-app.use(express.json({ limit: '100kb' })); // Increased to 100kb to allow rich SuperAdmin movie/songs/boxOffice payloads
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || !env.isProd || env.origins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, env.origins[0]);
+    },
+    credentials: true,
+  }),
+);
+app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 app.use(sanitizeInput);
 
