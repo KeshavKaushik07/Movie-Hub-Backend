@@ -27,7 +27,9 @@ const withUser = (q) => q.populate('user', 'name avatarColor role');
 
 // GET /titles/:type/:tmdbId/comments
 export const listComments = asyncHandler(async (req, res) => {
-  const f = parseTitle(req);
+  const parsed = parseTitle(req);
+  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
+  const f = { type: resolvedDoc?.mediaType || parsed.type, tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId };
   const list = await withUser(
     Comment.find({ ...f, isHidden: { $ne: true } })
       .sort('-isPinned createdAt')
@@ -38,7 +40,9 @@ export const listComments = asyncHandler(async (req, res) => {
 
 // POST /titles/:type/:tmdbId/comments { text, parent?, spoiler? }
 export const addComment = asyncHandler(async (req, res) => {
-  const f = parseTitle(req);
+  const parsed = parseTitle(req);
+  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
+  const f = { type: resolvedDoc?.mediaType || parsed.type, tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId };
   if (typeof req.body.text !== 'string' || !req.body.text.trim()) {
     throw ApiError.badRequest('Comment text is required');
   }

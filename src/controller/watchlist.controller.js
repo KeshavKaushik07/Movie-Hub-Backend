@@ -27,7 +27,10 @@ export const listWatchlist = asyncHandler(async (req, res) => {
 
 // PUT /watchlist/:type/:tmdbId { status }
 export const saveWatchlistItem = asyncHandler(async (req, res) => {
-  const { type, tmdbId } = parseTitle(req);
+  const parsed = parseTitle(req);
+  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
+  const type = resolvedDoc?.mediaType || parsed.type;
+  const tmdbId = resolvedDoc?.tmdbId || parsed.tmdbId;
   const status = req.body.status ?? 'planned';
   if (!WATCH_STATUS.includes(status)) {
     throw ApiError.badRequest(`Status must be one of: ${WATCH_STATUS.join(', ')}`);
@@ -43,7 +46,10 @@ export const saveWatchlistItem = asyncHandler(async (req, res) => {
 
 // DELETE /watchlist/:type/:tmdbId
 export const removeWatchlistItem = asyncHandler(async (req, res) => {
-  const { type, tmdbId } = parseTitle(req);
+  const parsed = parseTitle(req);
+  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
+  const type = resolvedDoc?.mediaType || parsed.type;
+  const tmdbId = resolvedDoc?.tmdbId || parsed.tmdbId;
   await Watchlist.deleteOne({ user: req.user._id, type, tmdbId });
   res.status(204).end();
 });

@@ -74,12 +74,14 @@ const findDistinctSimilarTitles = async (doc, limit = 18) => {
 
 // GET /titles/:type/:tmdbId -> full details (served from MongoDB if present; fetched from TMDB + stored in MongoDB if not!)
 export const getTitle = asyncHandler(async (req, res) => {
-  const { type, tmdbId } = parseTitle(req);
-  const doc = await getOrFetchTitle(type, tmdbId, { details: true });
+  const { type, tmdbId, slug } = parseTitle(req);
+  const doc = await getOrFetchTitle(type, tmdbId || slug, { details: true });
+  const resolvedType = doc.mediaType || type;
+  const resolvedId = doc.tmdbId;
 
   const [similarItems, criticDocs] = await Promise.all([
     findDistinctSimilarTitles(doc, 18),
-    Review.find({ type, tmdbId, reviewType: 'critic', isHidden: { $ne: true } })
+    Review.find({ type: resolvedType, tmdbId: resolvedId, reviewType: 'critic', isHidden: { $ne: true } })
       .populate('user', 'name avatarColor role')
       .sort('-isFeatured -createdAt')
       .limit(30)
@@ -106,16 +108,16 @@ export const getTitle = asyncHandler(async (req, res) => {
 
 // GET /titles/:type/:tmdbId/similar
 export const similarTitles = asyncHandler(async (req, res) => {
-  const { type, tmdbId } = parseTitle(req);
-  const doc = await getOrFetchTitle(type, tmdbId);
+  const { type, tmdbId, slug } = parseTitle(req);
+  const doc = await getOrFetchTitle(type, tmdbId || slug);
   const shaped = await findDistinctSimilarTitles(doc, 20);
   res.json({ items: shaped, results: shaped });
 });
 
 // GET /titles/tv/:tmdbId/season/:seasonNumber
 export const getSeason = asyncHandler(async (req, res) => {
-  const tmdbId = Number(req.params.tmdbId);
+  const rawId = req.params.tmdbId;
   const seasonNumber = Number(req.params.seasonNumber);
-  const season = await getOrFetchSeason(tmdbId, seasonNumber);
+  const season = await getOrFetchSeason(rawId, seasonNumber);
   res.json({ season });
 });

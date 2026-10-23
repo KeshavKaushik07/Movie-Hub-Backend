@@ -333,19 +333,19 @@ export const homeFeed = asyncHandler(async (req, res) => {
     regionalCelebs,
   ] = await Promise.all([
     getActiveFeaturedHero(),
-    findTitles({ type: 'movie', list: 'upcoming', limit: 16 }, { listName: 'upcoming' }),
-    findTitles({ type: 'movie', list: 'trending', limit: 16 }, { listName: 'trending' }),
-    findTitles({ type: 'tv', list: 'trending', limit: 16 }, { listName: 'trending' }),
-    findTitles({ type: 'webseries', limit: 16 }),
-    findTitles({ type: 'movie', list: 'popular', limit: 16 }, { listName: 'popular' }),
-    findTitles({ type: 'movie', list: 'top-rated', limit: 16 }, { listName: 'top-rated' }),
-    findTitles({ type: 'movie', industry: 'bollywood', limit: 16 }),
-    findTitles({ type: 'movie', industry: 'tollywood', limit: 16 }),
-    findTitles({ type: 'movie', industry: 'kollywood', limit: 16 }),
-    findTitles({ type: 'movie', industry: 'hollywood', limit: 16 }),
-    findTitles({ industry: 'korean', limit: 16 }),
-    findTitles({ ott: 'netflix', limit: 16 }),
-    findTitles({ ott: 'prime', limit: 16 }),
+    findTitles({ type: 'movie', list: 'upcoming', limit: 24 }, { listName: 'upcoming' }),
+    findTitles({ type: 'movie', list: 'trending', limit: 45 }, { listName: 'trending' }),
+    findTitles({ type: 'tv', list: 'trending', limit: 45 }, { listName: 'trending' }),
+    findTitles({ type: 'webseries', limit: 45 }),
+    findTitles({ type: 'movie', list: 'popular', limit: 45 }, { listName: 'popular' }),
+    findTitles({ type: 'movie', list: 'top-rated', limit: 45 }, { listName: 'top-rated' }),
+    findTitles({ type: 'movie', industry: 'bollywood', limit: 40 }),
+    findTitles({ type: 'movie', industry: 'tollywood', limit: 40 }),
+    findTitles({ type: 'movie', industry: 'kollywood', limit: 40 }),
+    findTitles({ type: 'movie', industry: 'hollywood', limit: 45 }),
+    findTitles({ industry: 'korean', limit: 36 }),
+    findTitles({ ott: 'netflix', limit: 45 }),
+    findTitles({ ott: 'prime', limit: 45 }),
     Title.find({ siteReviewCount: { $gt: 0 } })
       .sort({ siteRating: -1, siteReviewCount: -1 })
       .limit(12)
@@ -443,6 +443,32 @@ export const homeFeed = asyncHandler(async (req, res) => {
           : []),
       ];
 
+  // Deduplicate across rows so the same title does not repeat across Netflix, Prime, Trending, etc.
+  const usedAcrossRows = new Set();
+  const deduplicatedRows = [];
+  for (const row of rows) {
+    const pool = Array.isArray(row.items) ? row.items : [];
+    const distinctItems = [];
+    const rowSeen = new Set();
+    for (const item of pool) {
+      if (!item?.id) continue;
+      const idKey = `${item.type || 'movie'}:${item.id}`;
+      const titleKey = String(item.title || item.name || '').toLowerCase().trim();
+      if (rowSeen.has(idKey) || (titleKey && rowSeen.has(titleKey))) continue;
+      rowSeen.add(idKey);
+      if (titleKey) rowSeen.add(titleKey);
+      if (!usedAcrossRows.has(idKey) && (!titleKey || !usedAcrossRows.has(titleKey))) {
+        distinctItems.push(item);
+        usedAcrossRows.add(idKey);
+        if (titleKey) usedAcrossRows.add(titleKey);
+        if (distinctItems.length >= 16) break;
+      }
+    }
+    if (distinctItems.length > 0) {
+      deduplicatedRows.push({ ...row, items: distinctItems });
+    }
+  }
+
   res.json({
     success: true,
     region: isIndia ? 'IN' : 'GLOBAL',
@@ -474,7 +500,7 @@ export const homeFeed = asyncHandler(async (req, res) => {
       publishedAt: b.publishedAt || b.createdAt,
       authorName: b.author?.name || b.authorName || 'Movies Hub Editorial',
     })),
-    rows,
+    rows: deduplicatedRows,
   });
 });
 

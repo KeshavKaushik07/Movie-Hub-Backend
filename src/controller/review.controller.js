@@ -46,7 +46,9 @@ const withUser = (q) => q.populate('user', 'name avatarColor role');
 
 // GET /titles/:type/:tmdbId/reviews -> { reviews, criticReviews, tmdbReviews, stats, mine }
 export const listReviews = asyncHandler(async (req, res) => {
-  const f = parseTitle(req);
+  const parsed = parseTitle(req);
+  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
+  const f = { type: resolvedDoc?.mediaType || parsed.type, tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId };
   const [userReviews, criticReviews, aggUser, aggCritic, mine, titleDoc] = await Promise.all([
     withUser(Review.find({ ...f, reviewType: { $ne: 'critic' }, isHidden: { $ne: true } }).sort('-isFeatured -createdAt').limit(100)),
     withUser(Review.find({ ...f, reviewType: 'critic', isHidden: { $ne: true } }).sort('-isFeatured -createdAt').limit(50)),
@@ -78,7 +80,9 @@ export const listReviews = asyncHandler(async (req, res) => {
 
 // PUT /titles/:type/:tmdbId/reviews { rating, headline?, text?, spoiler? } -> { review }
 export const saveReview = asyncHandler(async (req, res) => {
-  const f = parseTitle(req);
+  const parsed = parseTitle(req);
+  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
+  const f = { type: resolvedDoc?.mediaType || parsed.type, tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId };
   const rating = Number(req.body.rating);
   if (!Number.isInteger(rating) || rating < 1 || rating > 10) {
     throw ApiError.badRequest('Rating must be a whole number from 1 to 10');
@@ -103,7 +107,9 @@ export const saveReview = asyncHandler(async (req, res) => {
 
 // POST /titles/:type/:tmdbId/critic-reviews (Admin & SuperAdmin)
 export const addCriticReview = asyncHandler(async (req, res) => {
-  const f = parseTitle(req);
+  const parsed = parseTitle(req);
+  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
+  const f = { type: resolvedDoc?.mediaType || parsed.type, tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId };
   const rating = Number(req.body.rating);
   if (!Number.isFinite(rating) || rating < 1 || rating > 10) {
     throw ApiError.badRequest('Critic rating must be between 1 and 10');

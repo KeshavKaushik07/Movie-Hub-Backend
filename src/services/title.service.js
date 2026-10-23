@@ -2,6 +2,7 @@ import Title from '../models/Title.js';
 import Genre from '../models/Genre.js';
 import Review from '../models/Review.js';
 import ApiError from '../utils/ApiError.js';
+import { slugifyTitle } from '../utils/title.js';
 import env from '../config/env.js';
 import { INDUSTRIES, OTT_PROVIDERS } from '../config/constant.js';
 import { tmdbGet } from './tmdb.client.js';
@@ -462,15 +463,94 @@ export async function saveListings(results, type, tags = {}) {
  * 2. If present (and has full details when `details: true`), returns immediately from MongoDB!
  * 3. If not in MongoDB (or missing full details), fetches from TMDB, stores in MongoDB (plus caches similar/recommended titles!), and returns.
  */
-export async function getOrFetchTitle(type, tmdbId, { details = false, forceRefresh = false } = {}) {
-  const normalizedType = type === 'webseries' ? 'tv' : type;
-  let doc = await Title.findOne({ mediaType: normalizedType, tmdbId });
+async function resolveTitleBySlug(normalizedType, rawSlug) {
+  const cleanSlug = slugifyTitle(rawSlug);
+  const words = cleanSlug.split('-').filter(Boolean);
+  if (!words.length) return null;
+
+  const escapedWords = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const flexRegex = new RegExp(`^[^a-zA-Z0-9]*${escapedWords.join('[^a-zA-Z0-9]+')}[^a-zA-Z0-9]*$`, 'i');
+  const broadRegex = new RegExp(escapedWords.join('.*'), 'i');
+
+  let candidates = await Title.find({
+    mediaType: normalizedType,
+    $or: [{ title: flexRegex }, { originalTitle: flexRegex }],
+  })
+    .sort('-popularity -voteCount')
+    .limit(10);
+
+  if (!candidates.length) {
+    candidates = await Title.find({
+      $or: [{ title: flexRegex }, { originalTitle: flexRegex }],
+    })
+      .sort('-popularity -voteCount')
+      .limit(10);
+  }
+
+  if (!candidates.length) {
+    candidates = await Title.find({
+      $or: [{ title: broadRegex }, { originalTitle: broadRegex }],
+    })
+      .sort('-popularity -voteCount')
+      .limit(15);
+  }
+
+  const exactMatch =
+    candidates.find(
+      (c) =>
+        slugifyTitle(c.title) === cleanSlug ||
+        slugifyTitle(c.originalTitle) === cleanSlug,
+    ) || candidates[0];
+
+  if (exactMatch) return exactMatch;
+
+  const queryText = words.join(' ');
+  const typesToTry = normalizedType === 'tv' ? ['tv', 'movie'] : ['movie', 'tv'];
+  for (const tType of typesToTry) {
+    try {
+      const sData = await tmdbGet(`/search/${tType}`, { query: queryText, page: 1 });
+      const results = sData?.results || [];
+      if (results.length > 0) {
+        await saveListings(results, tType);
+        const picked =
+          results.find(
+            (r) =>
+              slugifyTitle(r.title || r.name) === cleanSlug ||
+              slugifyTitle(r.original_title || r.original_name) === cleanSlug,
+          ) || results[0];
+        if (picked?.id) {
+          return await Title.findOne({ mediaType: tType, tmdbId: Number(picked.id) });
+        }
+      }
+    } catch {
+      /* continue */
+    }
+  }
+  return null;
+}
+
+export async function getOrFetchTitle(type, tmdbIdOrSlug, { details = false, forceRefresh = false } = {}) {
+  let normalizedType = type === 'webseries' ? 'tv' : type;
+  let numericId = Number(tmdbIdOrSlug);
+  let doc = null;
+
+  if (!Number.isInteger(numericId) || numericId <= 0 || !/^\d+$/.test(String(tmdbIdOrSlug).trim())) {
+    doc = await resolveTitleBySlug(normalizedType, String(tmdbIdOrSlug));
+    if (!doc) {
+      throw ApiError.notFound('Title not found for this name');
+    }
+    normalizedType = doc.mediaType || normalizedType;
+    numericId = doc.tmdbId;
+  } else {
+    doc = await Title.findOne({ mediaType: normalizedType, tmdbId: numericId });
+  }
+
   if (doc && (!details || doc.detailsFetched || doc.isCustom) && !forceRefresh) {
     return doc;
   }
 
   try {
-    const data = await tmdbGet(`/${normalizedType}/${tmdbId}`, {
+    const data = await tmdbGet(`/${normalizedType}/${numericId}`, {
       append_to_response: 'credits,videos,images,watch/providers,reviews,similar,recommendations,release_dates,content_ratings,keywords,external_ids',
       include_image_language: 'en,null,hi',
     });
@@ -481,18 +561,17 @@ export async function getOrFetchTitle(type, tmdbId, { details = false, forceRefr
 
     const updatePayload = fromDetails(data, normalizedType, doc);
     doc = await Title.findOneAndUpdate(
-      { mediaType: normalizedType, tmdbId },
+      { mediaType: normalizedType, tmdbId: numericId },
       { $set: updatePayload },
       { upsert: true, new: true },
     );
 
-    // Opportunistically cache similar & recommended listings into MongoDB in the background
     const bonusListings = [...(data.similar?.results || []), ...(data.recommendations?.results || [])];
     if (bonusListings.length) {
       saveListings(bonusListings, normalizedType).catch(() => {});
     }
   } catch (err) {
-    if (doc) return doc; // Serve existing MongoDB doc if TMDB is offline/unreachable
+    if (doc) return doc;
     throw err;
   }
   return doc;
@@ -500,12 +579,17 @@ export async function getOrFetchTitle(type, tmdbId, { details = false, forceRefr
 
 /**
  * Cache-Aside TV Season & Episodes Fetcher:
- * Checks if the season's episodes are already stored in `Title.seasonsDetails` in MongoDB;
- * if not, fetches `/tv/:tmdbId/season/:seasonNumber` from TMDB, stores in MongoDB, and serves.
  */
-export async function getOrFetchSeason(tmdbId, seasonNumber) {
+export async function getOrFetchSeason(tmdbIdOrSlug, seasonNumber) {
   const sNum = Number(seasonNumber);
-  let doc = await Title.findOne({ mediaType: 'tv', tmdbId });
+  let tmdbId = Number(tmdbIdOrSlug);
+  let doc = null;
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) {
+    doc = await getOrFetchTitle('tv', tmdbIdOrSlug);
+    tmdbId = doc.tmdbId;
+  } else {
+    doc = await Title.findOne({ mediaType: 'tv', tmdbId });
+  }
   const existing = doc?.seasonsDetails?.find((s) => s.seasonNumber === sNum);
   if (existing && existing.episodes?.length) {
     return existing;
@@ -581,10 +665,16 @@ export const shapeTitle = (t) => {
     siteReviewCount: t.siteReviewCount || 0,
     criticRating: t.criticRating || 0,
     criticReviewCount: t.criticReviewCount || 0,
-    budget: t.budget > 0 ? t.budget : estimateTitleFinancials(t).budget,
-    revenue: (t.boxOffice?.worldwideCollection || t.revenue) > 0 ? (t.boxOffice?.worldwideCollection || t.revenue) : estimateTitleFinancials(t).revenue,
-     financialEstimated: !(t.budget > 0 && (t.boxOffice?.worldwideCollection || t.revenue) > 0),
-    verdict: t.boxOffice?.verdict || computeVerdict(t.budget, t.revenue),
+    slug: slugifyTitle(t.title || t.originalTitle || `${t.mediaType}-${t.tmdbId}`),
+    budget: Number(t.budget) > 0 ? Number(t.budget) : 0,
+    revenue: Number(t.boxOffice?.worldwideCollection || t.revenue) > 0 ? Number(t.boxOffice?.worldwideCollection || t.revenue) : 0,
+    financialEstimated: false,
+    verdict:
+      Number(t.budget) > 0 && Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
+        ? t.boxOffice?.verdict || computeVerdict(t.budget, t.boxOffice?.worldwideCollection || t.revenue)
+        : t.boxOffice?.verdict && t.boxOffice.verdict !== 'TBA'
+          ? t.boxOffice.verdict
+          : '',
     ottProviders: t.ottProviders || [],
     regions: t.regions || [],
   };
@@ -618,8 +708,10 @@ export const shapeDetail = (t) => {
     id: c.id,
     name: c.name,
     character: c.character,
+    profilePath: c.profilePath,
     profile_path: c.profilePath,
-    photoUrl: img(c.profilePath, 'w185'),
+    profileUrl: img(c.profilePath, 'h632'),
+    photoUrl: img(c.profilePath, 'h632'),
   }));
 
   const crew = (t.crew || []).map((c) => ({
@@ -627,29 +719,39 @@ export const shapeDetail = (t) => {
     name: c.name,
     job: c.job,
     department: c.department,
+    profilePath: c.profilePath,
     profile_path: c.profilePath,
-    photoUrl: img(c.profilePath, 'w185'),
+    profileUrl: img(c.profilePath, 'h632'),
+    photoUrl: img(c.profilePath, 'h632'),
   }));
 
-  const estFin = estimateTitleFinancials(t);
-  const budget = t.budget > 0 ? t.budget : estFin.budget;
-  const revenue = (t.boxOffice?.worldwideCollection || t.revenue) > 0 ? (t.boxOffice?.worldwideCollection || t.revenue) : estFin.revenue;
+  const budget = Number(t.budget) > 0 ? Number(t.budget) : 0;
+  const revenue =
+    Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
+      ? Number(t.boxOffice?.worldwideCollection || t.revenue)
+      : 0;
   const profit = revenue > 0 && budget > 0 ? revenue - budget : 0;
-  const roiPercent = budget > 0 && revenue > 0 ? Math.round(((revenue - budget) / budget) * 100) : 0;
+  const roiPercent =
+    budget > 0 && revenue > 0 ? Math.round(((revenue - budget) / budget) * 100) : null;
 
   const boxOffice = {
     budget,
     revenue,
-    budgetFormatted: t.boxOffice?.budgetFormatted || (budget > 0 ? `$${budget.toLocaleString()}` : 'Not Disclosed'),
-    domesticCollection: t.boxOffice?.domesticCollection || (revenue > 0 ? Math.round(revenue * 0.42) : 0),
-    internationalCollection: t.boxOffice?.internationalCollection || (revenue > 0 ? Math.round(revenue * 0.58) : 0),
+    budgetFormatted: t.boxOffice?.budgetFormatted || (budget > 0 ? `$${budget.toLocaleString()}` : ''),
+    domesticCollection: t.boxOffice?.domesticCollection || 0,
+    internationalCollection: t.boxOffice?.internationalCollection || 0,
     worldwideCollection: revenue,
     indiaNetCollection: t.boxOffice?.indiaNetCollection || 0,
     indiaGrossCollection: t.boxOffice?.indiaGrossCollection || 0,
     openingWeekend: t.boxOffice?.openingWeekend || 0,
     openingDay: t.boxOffice?.openingDay || 0,
     currency: t.boxOffice?.currency || 'USD',
-    verdict: computeVerdict(budget, revenue, t.boxOffice?.verdict),
+    verdict:
+      budget > 0 && revenue > 0
+        ? computeVerdict(budget, revenue, t.boxOffice?.verdict)
+        : t.boxOffice?.verdict && t.boxOffice.verdict !== 'TBA'
+          ? t.boxOffice.verdict
+          : '',
     profit,
     roiPercent,
     notes: t.boxOffice?.notes || '',
