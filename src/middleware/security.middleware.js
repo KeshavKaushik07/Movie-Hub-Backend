@@ -1,16 +1,17 @@
-/**
- * Enterprise Backend Security Middleware (Requirement 3)
- * 1. Recursive NoSQL Injection ($gt, $ne, $where) & Prototype Pollution
- *    (__proto__, constructor, prototype) key stripper.
- * 2. Recursive XSS payload sanitizer (<script>, javascript:, event handlers,
- *    <iframe>, <object>) across req.body, req.query, and req.params.
- * 3. HTTP Parameter Pollution (HPP) guard so array query tricks (?q[]=a&q[]=b)
- *    cannot crash string methods in controllers.
- * 4. Strict HTTP Security Headers (X-Content-Type-Options, X-Frame-Options,
- *    Referrer-Policy, Permissions-Policy).
- */
-
 import rateLimit from 'express-rate-limit';
+
+const limiter = (limit, extra = {}) =>
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { success: false, message: 'Too many requests, please try again later' },
+    ...extra,
+  });
+
+export const apiLimiter = limiter(1500); // generous rate limit for rich UI tabs & admin dashboards
+export const authLimiter = limiter(30, { skipSuccessfulRequests: true });
 
 const XSS_PATTERNS = [
   /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
@@ -35,13 +36,13 @@ const cleanString = (val) => {
   return s;
 };
 
-const cleanObject = (obj, depth = 0) => {
+// Blocks NoSQL injection ($), prototype pollution, and XSS payloads in body, params, and query
+const clean = (obj, depth = 0) => {
   if (depth > 10 || !obj || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
     for (let i = 0; i < obj.length; i += 1) {
       if (typeof obj[i] === 'string') obj[i] = cleanString(obj[i]);
-      else if (obj[i] && typeof obj[i] === 'object')
-        cleanObject(obj[i], depth + 1);
+      else if (obj[i] && typeof obj[i] === 'object') clean(obj[i], depth + 1);
     }
     return obj;
   }
@@ -54,56 +55,31 @@ const cleanObject = (obj, depth = 0) => {
     if (typeof val === 'string') {
       obj[key] = cleanString(val);
     } else if (val && typeof val === 'object') {
-      cleanObject(val, depth + 1);
+      clean(val, depth + 1);
     }
   }
   return obj;
 };
 
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 10, // Maximum 10 attempts per IP per window
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many authentication attempts. Please try again later.',
-  },
-});
-
-export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 100,
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many requests. Please try again later.',
-  },
-});
-
-/**
- * Normalizes query parameters so unexpected arrays from HTTP Parameter Pollution
- * (?page=1&page=2 or ?q[]=foo) are safely collapsed to their last string value.
- */
 const normalizeQueryParams = (query) => {
   if (!query || typeof query !== 'object') return;
   for (const key of Object.keys(query)) {
     if (Array.isArray(query[key])) {
       const last = query[key][query[key].length - 1];
-      query[key] =
-        typeof last === 'string' ? cleanString(last) : String(last ?? '');
+      query[key] = typeof last === 'string' ? cleanString(last) : String(last ?? '');
     }
   }
 };
 
-export const sanitizeRequest = (req, _res, next) => {
-  cleanObject(req.body);
-  cleanObject(req.query);
-  cleanObject(req.params);
+export const sanitizeInput = (req, _res, next) => {
+  clean(req.body);
+  clean(req.params);
+  clean(req.query);
   normalizeQueryParams(req.query);
   next();
 };
+
+export const sanitizeRequest = sanitizeInput;
 
 export const securityHeaders = (_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');

@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import env from './config/env.js';
 import { API_PREFIX } from './config/constant.js';
 import routes from './routes/index.js';
-import { apiLimiter,  sanitizeRequest as sanitizeInput } from './middleware/security.middleware.js';
+import { apiLimiter, sanitizeInput, securityHeaders } from './middleware/security.middleware.js';
 import { errorHandler, notFound } from './middleware/error.middleware.js';
 
 const app = express();
@@ -13,6 +13,7 @@ app.disable('x-powered-by');
 if (env.isProd) app.set('trust proxy', 1);
 
 app.use(helmet());
+app.use(securityHeaders);
 app.use(
   cors({
     origin: (origin, callback) => {
