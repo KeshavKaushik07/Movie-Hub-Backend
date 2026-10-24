@@ -6,13 +6,13 @@ import User from '../models/User.js';
 import ApiError from './ApiError.js';
 
 export const signAccess = (u) =>
-  jwt.sign({ sub: u.id, role: u.role }, env.jwt.accessSecret, { expiresIn: env.jwt.accessTtl });
+  jwt.sign({ sub: u.id, role: u.role }, env.jwt.accessSecret, { algorithm: 'HS256', expiresIn: env.jwt.accessTtl });
 
 export const hash = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
 export const verifyRefresh = (token) => {
   try {
-    return jwt.verify(token, env.jwt.refreshSecret);
+    return jwt.verify(token, env.jwt.refreshSecret, { algorithms: ['HS256'] });
   } catch {
     throw ApiError.unauthorized('Session expired, please log in again');
   }

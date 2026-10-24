@@ -15,7 +15,7 @@ const extractToken = (req) => {
 const authenticate = async (token) => {
   let payload;
   try {
-    payload = jwt.verify(token, env.jwt.accessSecret);
+    payload = jwt.verify(token, env.jwt.accessSecret, { algorithms: ['HS256'] });
   } catch (err) {
     const e = ApiError.unauthorized(
       err.name === 'TokenExpiredError' ? 'Access token expired' : 'Invalid access token',
