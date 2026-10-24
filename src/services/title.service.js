@@ -14,9 +14,16 @@ const img = (path, size = 'w500') => {
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
   return `${env.tmdb.imageBase}/${size}${path}`;
 };
-const compact = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
-const toInt = (v) => (v !== undefined && v !== '' && Number.isInteger(Number(v)) ? Number(v) : undefined);
-const toNum = (v) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);
+const compact = (obj) =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+const toInt = (v) =>
+  v !== undefined && v !== '' && Number.isInteger(Number(v))
+    ? Number(v)
+    : undefined;
+const toNum = (v) =>
+  v !== undefined && v !== '' && Number.isFinite(Number(v))
+    ? Number(v)
+    : undefined;
 const toList = (v) =>
   String(v || '')
     .split(',')
@@ -52,7 +59,8 @@ Object.values(OTT_PROVIDERS).forEach((p) => {
 });
 
 // Detect OTT network names for Web Series classification
-const WEB_SERIES_NETWORKS = /netflix|amazon|prime video|disney\+|hotstar|apple tv|hulu|hbo|max|jiocinema|sonyliv|zee5|mx player|altbalaji|tvf|voot|aha|hoichoi|crunchyroll|paramount\+|peacock/i;
+const WEB_SERIES_NETWORKS =
+  /netflix|amazon|prime video|disney\+|hotstar|apple tv|hulu|hbo|max|jiocinema|sonyliv|zee5|mx player|altbalaji|tvf|voot|aha|hoichoi|crunchyroll|paramount\+|peacock/i;
 
 // ======================= genres =======================
 let genreNames = new Map();
@@ -65,18 +73,21 @@ export async function syncGenres() {
   for (const type of ['movie', 'tv']) {
     const data = await tmdbGet(`/genre/${type}/list`, { language: 'en-US' });
     for (const g of data?.genres || []) {
-      await Genre.updateOne({ tmdbId: g.id }, { name: g.name, $addToSet: { mediaTypes: type } }, { upsert: true });
+      await Genre.updateOne(
+        { tmdbId: g.id },
+        { name: g.name, $addToSet: { mediaTypes: type } },
+        { upsert: true },
+      );
     }
   }
   await loadGenres();
 }
 
-// Estimate Box Office verdict automatically when budget & revenue exist
-
 // Deterministic fallback budget & revenue estimator when TMDB returns 0
 export const estimateTitleFinancials = (t) => {
   const rawBudget = Number(t?.budget) || 0;
-  const rawRevenue = Number(t?.boxOffice?.worldwideCollection || t?.revenue) || 0;
+  const rawRevenue =
+    Number(t?.boxOffice?.worldwideCollection || t?.revenue) || 0;
   if (rawBudget > 0 && rawRevenue > 0) {
     return { budget: rawBudget, revenue: rawRevenue, isEstimated: false };
   }
@@ -86,15 +97,36 @@ export const estimateTitleFinancials = (t) => {
   const votes = Math.max(10, Number(t?.voteCount) || 80);
   const lang = String(t?.originalLanguage || 'hi').toLowerCase();
 
-  // Base scale in USD (which converts to ₹ Crores on frontend: $1M = ₹8.35 Cr)
-  const isIndian = ['hi', 'te', 'ta', 'ml', 'kn', 'mr', 'bn', 'pa', 'gu'].includes(lang);
+  const isIndian = [
+    'hi',
+    'te',
+    'ta',
+    'ml',
+    'kn',
+    'mr',
+    'bn',
+    'pa',
+    'gu',
+  ].includes(lang);
   const baseUsd = isIndian
-    ? Math.round((4_500_000 + (seed % 19) * 1_200_000 + Math.min(pop, 120) * 180_000) / 100_000) * 100_000
-    : Math.round((18_000_000 + (seed % 23) * 3_500_000 + Math.min(pop, 150) * 450_000) / 100_000) * 100_000;
+    ? Math.round(
+        (4_500_000 + (seed % 19) * 1_200_000 + Math.min(pop, 120) * 180_000) /
+          100_000,
+      ) * 100_000
+    : Math.round(
+        (18_000_000 + (seed % 23) * 3_500_000 + Math.min(pop, 150) * 450_000) /
+          100_000,
+      ) * 100_000;
 
   const estBudget = rawBudget > 0 ? rawBudget : baseUsd;
-  const multiplier = Math.max(0.85, (rating / 6.2) * (1.15 + ((seed % 11) * 0.14)) + Math.min(votes / 4000, 1.2));
-  const estRevenue = rawRevenue > 0 ? rawRevenue : Math.round((estBudget * multiplier) / 100_000) * 100_000;
+  const multiplier = Math.max(
+    0.85,
+    (rating / 6.2) * (1.15 + (seed % 11) * 0.14) + Math.min(votes / 4000, 1.2),
+  );
+  const estRevenue =
+    rawRevenue > 0
+      ? rawRevenue
+      : Math.round((estBudget * multiplier) / 100_000) * 100_000;
 
   return {
     budget: estBudget,
@@ -103,10 +135,19 @@ export const estimateTitleFinancials = (t) => {
   };
 };
 
-export const computeVerdict = (budget = 0, revenue = 0, existingVerdict = '') => {
+export const computeVerdict = (
+  budget = 0,
+  revenue = 0,
+  existingVerdict = '',
+) => {
   if (existingVerdict) return existingVerdict;
   if (!revenue || revenue <= 0) return '';
-  if (!budget || budget <= 0) return revenue >= 100_000_000 ? 'Blockbuster' : revenue >= 25_000_000 ? 'Super Hit' : 'Hit';
+  if (!budget || budget <= 0)
+    return revenue >= 100_000_000
+      ? 'Blockbuster'
+      : revenue >= 25_000_000
+        ? 'Super Hit'
+        : 'Hit';
   const ratio = revenue / budget;
   if (ratio >= 4) return 'All-Time Blockbuster';
   if (ratio >= 2.8) return 'Blockbuster';
@@ -160,19 +201,28 @@ export const fromListing = (r, type, extra = {}) => {
 const extractCertification = (d, type) => {
   if (type === 'movie') {
     const results = d.release_dates?.results || [];
-    const pref = results.find((r) => r.iso_3166_1 === 'IN') || results.find((r) => r.iso_3166_1 === 'US') || results[0];
-    const cert = pref?.release_dates?.find((x) => x.certification)?.certification;
+    const pref =
+      results.find((r) => r.iso_3166_1 === 'IN') ||
+      results.find((r) => r.iso_3166_1 === 'US') ||
+      results[0];
+    const cert = pref?.release_dates?.find(
+      (x) => x.certification,
+    )?.certification;
     return cert || undefined;
   }
   const results = d.content_ratings?.results || [];
-  const pref = results.find((r) => r.iso_3166_1 === 'IN') || results.find((r) => r.iso_3166_1 === 'US') || results[0];
+  const pref =
+    results.find((r) => r.iso_3166_1 === 'IN') ||
+    results.find((r) => r.iso_3166_1 === 'US') ||
+    results[0];
   return pref?.rating || undefined;
 };
 
 // Extract watch providers & OTT keys
 const extractWatchProviders = (d) => {
   const results = d['watch/providers']?.results || {};
-  const regionData = results.IN || results.US || results.GB || Object.values(results)[0] || {};
+  const regionData =
+    results.IN || results.US || results.GB || Object.values(results)[0] || {};
   const mapList = (arr = []) =>
     arr.map((p) => ({
       id: p.provider_id,
@@ -191,10 +241,13 @@ const extractWatchProviders = (d) => {
     if (key) ottKeys.add(key);
     const lower = (p.name || '').toLowerCase();
     if (lower.includes('netflix')) ottKeys.add('netflix');
-    else if (lower.includes('prime') || lower.includes('amazon')) ottKeys.add('prime');
-    else if (lower.includes('hotstar') || lower.includes('disney')) ottKeys.add('hotstar');
+    else if (lower.includes('prime') || lower.includes('amazon'))
+      ottKeys.add('prime');
+    else if (lower.includes('hotstar') || lower.includes('disney'))
+      ottKeys.add('hotstar');
     else if (lower.includes('jio')) ottKeys.add('jiocinema');
-    else if (lower.includes('sonyliv') || lower.includes('sony liv')) ottKeys.add('sonyliv');
+    else if (lower.includes('sonyliv') || lower.includes('sony liv'))
+      ottKeys.add('sonyliv');
     else if (lower.includes('zee5')) ottKeys.add('zee5');
     else if (lower.includes('apple')) ottKeys.add('apple');
     else if (lower.includes('hulu')) ottKeys.add('hulu');
@@ -217,7 +270,9 @@ const extractWatchProviders = (d) => {
 
 // Extract YouTube trailers, videos, and songs/soundtracks
 const extractVideosAndSongs = (d, existingDoc = null) => {
-  const rawVideos = (d.videos?.results || []).filter((v) => v.site === 'YouTube' && v.key);
+  const rawVideos = (d.videos?.results || []).filter(
+    (v) => v.site === 'YouTube' && v.key,
+  );
   const videos = rawVideos.slice(0, 30).map((v) => ({
     id: v.id || v.key,
     key: v.key,
@@ -234,7 +289,8 @@ const extractVideosAndSongs = (d, existingDoc = null) => {
     videos.find((v) => v.type === 'Teaser') ||
     videos[0];
 
-  const songRegex = /\b(song|music|lyric|lyrical|audio|jukebox|soundtrack|ost|theme|bgm|track|melody|sing|video song|full video)\b/i;
+  const songRegex =
+    /\b(song|music|lyric|lyrical|audio|jukebox|soundtrack|ost|theme|bgm|track|melody|sing|video song|full video)\b/i;
   const extractedSongs = videos
     .filter((v) => songRegex.test(v.name) || songRegex.test(v.type))
     .map((v) => ({
@@ -263,56 +319,268 @@ const extractVideosAndSongs = (d, existingDoc = null) => {
   };
 };
 
-export const fromDetails = (d, type, existingDoc = null, { resetOverrides = false } = {}) => {
+export const fromDetails = (
+  d,
+  type,
+  existingDoc = null,
+  { resetOverrides = false } = {},
+) => {
   const baseDoc = resetOverrides ? null : existingDoc;
-  const locked = resetOverrides ? new Set() : new Set(baseDoc?.lockedFields || []);
-  const listing = fromListing({ ...d, genre_ids: (d.genres || []).map((g) => g.id) }, type);
+  const locked = resetOverrides
+    ? new Set()
+    : new Set(baseDoc?.lockedFields || []);
+  const listing = fromListing(
+    { ...d, genre_ids: (d.genres || []).map((g) => g.id) },
+    type,
+  );
   const { autoRegion, ...baseListing } = listing;
 
   const { watchProviders, ottKeys } = extractWatchProviders(d);
   const { trailerKey, videos, songs } = extractVideosAndSongs(d, baseDoc);
 
-  const networks = (d.networks || []).map((n) => ({ id: n.id, name: n.name, logoPath: n.logo_path }));
-  const hasOttNetwork = networks.some((n) => WEB_SERIES_NETWORKS.test(n.name || ''));
+  const networks = (d.networks || []).map((n) => ({
+    id: n.id,
+    name: n.name,
+    logoPath: n.logo_path,
+  }));
+  const hasOttNetwork = networks.some((n) =>
+    WEB_SERIES_NETWORKS.test(n.name || ''),
+  );
   const isWebSeries =
-    type === 'tv' && (baseDoc?.isWebSeries || hasOttNetwork || ottKeys.length > 0 || (d.type && /miniseries|scripted/i.test(d.type)));
+    type === 'tv' &&
+    (baseDoc?.isWebSeries ||
+      hasOttNetwork ||
+      ottKeys.length > 0 ||
+      (d.type && /miniseries|scripted/i.test(d.type)));
 
-  const crewList = d.credits?.crew || [];
-  const directors =
-    type === 'movie'
-      ? crewList.filter((c) => c.job === 'Director').map((c) => c.name)
-      : (d.created_by || []).map((c) => c.name);
-  const writers = crewList
-    .filter((c) => ['Writer', 'Screenplay', 'Story'].includes(c.job))
-    .map((c) => c.name)
-    .slice(0, 6);
-  const producers = crewList
-    .filter((c) => ['Producer', 'Executive Producer'].includes(c.job))
-    .map((c) => c.name)
-    .slice(0, 6);
-  const musicDirectors = crewList
-    .filter((c) => /music|composer|score|song/i.test(c.job || ''))
-    .map((c) => c.name)
-    .slice(0, 6);
+  // Combine standard credits.crew and TV aggregate_credits.crew + created_by so no series/movie filmmaker is missed
+  const rawCrewList = [
+    ...(d.created_by || []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      job: 'Creator',
+      department: 'Directing',
+      profile_path: c.profile_path,
+    })),
+    ...(d.credits?.crew || []),
+    ...(d.aggregate_credits?.crew || []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      job: c.job || c.jobs?.[0]?.job || 'Crew',
+      department: c.department || 'Production',
+      profile_path: c.profile_path,
+    })),
+  ];
 
-  const budget = resetOverrides ? Number(d.budget) || 0 : d.budget || baseDoc?.budget || 0;
-  const revenue = resetOverrides ? Number(d.revenue) || 0 : d.revenue || baseDoc?.revenue || 0;
+  const directorsSet = new Set(
+    [
+      ...(type === 'movie'
+        ? rawCrewList.filter((c) => c.job === 'Director').map((c) => c.name)
+        : [
+            ...(d.created_by || []).map((c) => c.name),
+            ...rawCrewList
+              .filter((c) =>
+                ['Director', 'Series Director', 'Creator'].includes(c.job),
+              )
+              .map((c) => c.name),
+          ]),
+      ...(!resetOverrides && Array.isArray(baseDoc?.directors)
+        ? baseDoc.directors
+        : []),
+    ].filter(Boolean),
+  );
+  const directors = Array.from(directorsSet).slice(0, 10);
+
+  const writersSet = new Set(
+    [
+      ...rawCrewList
+        .filter((c) =>
+          ['Writer', 'Screenplay', 'Story', 'Book', 'Characters'].includes(
+            c.job,
+          ),
+        )
+        .map((c) => c.name),
+      ...(!resetOverrides && Array.isArray(baseDoc?.writers)
+        ? baseDoc.writers
+        : []),
+    ].filter(Boolean),
+  );
+  const writers = Array.from(writersSet).slice(0, 10);
+
+  const producersSet = new Set(
+    [
+      ...rawCrewList
+        .filter((c) => ['Producer', 'Executive Producer'].includes(c.job))
+        .map((c) => c.name),
+      ...(!resetOverrides && Array.isArray(baseDoc?.producers)
+        ? baseDoc.producers
+        : []),
+    ].filter(Boolean),
+  );
+  const producers = Array.from(producersSet).slice(0, 10);
+
+  const musicDirectorsSet = new Set(
+    [
+      ...rawCrewList
+        .filter((c) => /music|composer|score|song/i.test(c.job || ''))
+        .map((c) => c.name),
+      ...(!resetOverrides && Array.isArray(baseDoc?.musicDirectors)
+        ? baseDoc.musicDirectors
+        : []),
+    ].filter(Boolean),
+  );
+  const musicDirectors = Array.from(musicDirectorsSet).slice(0, 10);
+
+  // Merge credits.cast + TV aggregate_credits.cast + any previously linked actors in baseDoc.cast
+  const rawCastList = [
+    ...(d.credits?.cast || []),
+    ...(d.aggregate_credits?.cast || []).map((c, idx) => ({
+      id: c.id,
+      name: c.name,
+      character: c.character || c.roles?.[0]?.character || '',
+      profile_path: c.profile_path,
+      order: c.order ?? 24 + idx,
+    })),
+  ];
+
+  const castMap = new Map();
+  rawCastList.forEach((c, idx) => {
+    if (!c || !c.name) return;
+    const key = c.id ? `id:${c.id}` : `name:${String(c.name).toLowerCase()}`;
+    if (!castMap.has(key)) {
+      castMap.set(key, {
+        id: c.id,
+        name: c.name,
+        character: c.character || '',
+        profilePath: c.profile_path || c.profilePath || null,
+        order: c.order ?? idx,
+      });
+    } else {
+      const prev = castMap.get(key);
+      if (!prev.profilePath && (c.profile_path || c.profilePath)) {
+        prev.profilePath = c.profile_path || c.profilePath;
+      }
+      if (!prev.character && c.character) {
+        prev.character = c.character;
+      }
+    }
+  });
+
+  // Preserve any actor already linked in existingDoc.cast (e.g. from syncPersonCreditsToMongo) so they are never truncated out
+  if (!resetOverrides && Array.isArray(baseDoc?.cast)) {
+    baseDoc.cast.forEach((c, idx) => {
+      if (!c || !c.name) return;
+      const key = c.id ? `id:${c.id}` : `name:${String(c.name).toLowerCase()}`;
+      const byNameKey = `name:${String(c.name).toLowerCase()}`;
+      const alreadyByName = Array.from(castMap.values()).some(
+        (existing) =>
+          String(existing.name || '').toLowerCase() ===
+          String(c.name).toLowerCase(),
+      );
+      if (!castMap.has(key) && !castMap.has(byNameKey) && !alreadyByName) {
+        castMap.set(key, {
+          id: c.id,
+          name: c.name,
+          character: c.character || '',
+          profilePath: c.profilePath || c.profile_path || null,
+          order: c.order ?? 60 + idx,
+        });
+      }
+    });
+  }
+
+  const mergedCast = Array.from(castMap.values()).slice(0, 65);
+
+  // Merge crew list prioritizing key creative roles + preserving any previously linked crew in baseDoc.crew
+  const crewPriority = (job = '') => {
+    const j = String(job).toLowerCase();
+    if (j === 'director' || j === 'creator' || j === 'series director')
+      return 1;
+    if (j.includes('music') || j.includes('composer') || j.includes('score'))
+      return 2;
+    if (j.includes('writer') || j.includes('screenplay') || j.includes('story'))
+      return 3;
+    if (j.includes('producer')) return 4;
+    if (
+      j.includes('photography') ||
+      j.includes('cinematography') ||
+      j === 'editor'
+    )
+      return 5;
+    return 6;
+  };
+
+  const sortedRawCrew = [...rawCrewList].sort(
+    (a, b) => crewPriority(a.job) - crewPriority(b.job),
+  );
+  const crewMap = new Map();
+  sortedRawCrew.forEach((c) => {
+    if (!c || !c.name) return;
+    const key = `${c.id || String(c.name).toLowerCase()}:${String(c.job || 'Crew').toLowerCase()}`;
+    if (!crewMap.has(key)) {
+      crewMap.set(key, {
+        id: c.id,
+        name: c.name,
+        job: c.job || 'Crew',
+        department: c.department || 'Production',
+        profilePath: c.profile_path || c.profilePath || null,
+      });
+    }
+  });
+
+  if (!resetOverrides && Array.isArray(baseDoc?.crew)) {
+    baseDoc.crew.forEach((c) => {
+      if (!c || !c.name) return;
+      const key = `${c.id || String(c.name).toLowerCase()}:${String(c.job || 'Crew').toLowerCase()}`;
+      if (!crewMap.has(key)) {
+        crewMap.set(key, {
+          id: c.id,
+          name: c.name,
+          job: c.job || 'Crew',
+          department: c.department || 'Production',
+          profilePath: c.profilePath || c.profile_path || null,
+        });
+      }
+    });
+  }
+
+  const mergedCrew = Array.from(crewMap.values()).slice(0, 50);
+
+  const budget = resetOverrides
+    ? Number(d.budget) || 0
+    : d.budget || baseDoc?.budget || 0;
+  const revenue = resetOverrides
+    ? Number(d.revenue) || 0
+    : d.revenue || baseDoc?.revenue || 0;
   const existingBox =
     !resetOverrides && baseDoc?.boxOffice
       ? baseDoc.boxOffice.toObject?.() || baseDoc.boxOffice
       : {};
 
   const boxOffice = {
-    budgetFormatted: existingBox.budgetFormatted || (budget > 0 ? `$${budget.toLocaleString()}` : ''),
-    domesticCollection: existingBox.domesticCollection || (revenue > 0 ? Math.round(revenue * 0.42) : 0),
-    internationalCollection: existingBox.internationalCollection || (revenue > 0 ? Math.round(revenue * 0.58) : 0),
+    budgetFormatted:
+      existingBox.budgetFormatted ||
+      (budget > 0 ? `$${budget.toLocaleString()}` : ''),
+    domesticCollection:
+      existingBox.domesticCollection ||
+      (revenue > 0 ? Math.round(revenue * 0.42) : 0),
+    internationalCollection:
+      existingBox.internationalCollection ||
+      (revenue > 0 ? Math.round(revenue * 0.58) : 0),
     worldwideCollection: existingBox.worldwideCollection || revenue || 0,
     indiaNetCollection: existingBox.indiaNetCollection || 0,
     indiaGrossCollection: existingBox.indiaGrossCollection || 0,
-    openingWeekend: existingBox.openingWeekend || (revenue > 0 ? Math.round(revenue * 0.22) : 0),
-    openingDay: existingBox.openingDay || (revenue > 0 ? Math.round(revenue * 0.08) : 0),
+    openingWeekend:
+      existingBox.openingWeekend ||
+      (revenue > 0 ? Math.round(revenue * 0.22) : 0),
+    openingDay:
+      existingBox.openingDay || (revenue > 0 ? Math.round(revenue * 0.08) : 0),
     currency: existingBox.currency || 'USD',
-    verdict: computeVerdict(budget, existingBox.worldwideCollection || revenue, existingBox.verdict),
+    verdict: computeVerdict(
+      budget,
+      existingBox.worldwideCollection || revenue,
+      existingBox.verdict,
+    ),
     notes: existingBox.notes || '',
   };
 
@@ -327,13 +595,18 @@ export const fromDetails = (d, type, existingDoc = null, { resetOverrides = fals
   }));
 
   const keywordsRaw = d.keywords?.keywords || d.keywords?.results || [];
-  const regionsSet = new Set([...(baseDoc?.regions || []), ...(autoRegion ? [autoRegion] : [])]);
+  const regionsSet = new Set([
+    ...(baseDoc?.regions || []),
+    ...(autoRegion ? [autoRegion] : []),
+  ]);
   const ottSet = new Set([...(baseDoc?.ottProviders || []), ...ottKeys]);
   networks.forEach((n) => {
     const lower = (n.name || '').toLowerCase();
     if (lower.includes('netflix')) ottSet.add('netflix');
-    else if (lower.includes('prime') || lower.includes('amazon')) ottSet.add('prime');
-    else if (lower.includes('hotstar') || lower.includes('disney')) ottSet.add('hotstar');
+    else if (lower.includes('prime') || lower.includes('amazon'))
+      ottSet.add('prime');
+    else if (lower.includes('hotstar') || lower.includes('disney'))
+      ottSet.add('hotstar');
     else if (lower.includes('jio')) ottSet.add('jiocinema');
     else if (lower.includes('sony')) ottSet.add('sonyliv');
     else if (lower.includes('zee')) ottSet.add('zee5');
@@ -350,20 +623,29 @@ export const fromDetails = (d, type, existingDoc = null, { resetOverrides = fals
     status: d.status || 'Released',
     homepage: resetOverrides ? d.homepage || '' : d.homepage || undefined,
     imdbId: d.imdb_id || d.external_ids?.imdb_id || undefined,
-    certification: resetOverrides ? extractCertification(d, type) || '' : extractCertification(d, type),
+    certification: resetOverrides
+      ? extractCertification(d, type) || ''
+      : extractCertification(d, type),
     runtime: resetOverrides
       ? d.runtime || d.episode_run_time?.[0] || 0
       : d.runtime || d.episode_run_time?.[0] || undefined,
     genres: (d.genres || []).map(({ id, name }) => ({ id, name })),
     countries: (d.production_countries || []).map((c) => c.name),
-    languages: (d.spoken_languages || []).map((l) => l.english_name || l.name).filter(Boolean),
-    keywords: keywordsRaw.map((k) => k.name).filter(Boolean).slice(0, 20),
-    productionCompanies: (d.production_companies || []).slice(0, 10).map((p) => ({
-      id: p.id,
-      name: p.name,
-      logoPath: p.logo_path,
-      country: p.origin_country,
-    })),
+    languages: (d.spoken_languages || [])
+      .map((l) => l.english_name || l.name)
+      .filter(Boolean),
+    keywords: keywordsRaw
+      .map((k) => k.name)
+      .filter(Boolean)
+      .slice(0, 20),
+    productionCompanies: (d.production_companies || [])
+      .slice(0, 10)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        logoPath: p.logo_path,
+        country: p.origin_country,
+      })),
     networks,
     regions: Array.from(regionsSet),
     ottProviders: Array.from(ottSet),
@@ -385,7 +667,9 @@ export const fromDetails = (d, type, existingDoc = null, { resetOverrides = fals
     videos,
     songs,
     images: {
-      backdrops: (d.images?.backdrops || []).slice(0, 12).map((b) => b.file_path),
+      backdrops: (d.images?.backdrops || [])
+        .slice(0, 12)
+        .map((b) => b.file_path),
       posters: (d.images?.posters || []).slice(0, 8).map((p) => p.file_path),
     },
     watchProviders,
@@ -393,20 +677,8 @@ export const fromDetails = (d, type, existingDoc = null, { resetOverrides = fals
     writers,
     producers,
     musicDirectors,
-    cast: (d.credits?.cast || []).slice(0, 24).map((c, idx) => ({
-      id: c.id,
-      name: c.name,
-      character: c.character,
-      profilePath: c.profile_path,
-      order: c.order ?? idx,
-    })),
-    crew: crewList.slice(0, 20).map((c) => ({
-      id: c.id,
-      name: c.name,
-      job: c.job,
-      department: c.department,
-      profilePath: c.profile_path,
-    })),
+    cast: mergedCast,
+    crew: mergedCrew,
     tmdbReviews,
     detailsFetched: true,
     detailsFailed: false,
@@ -448,7 +720,8 @@ export async function saveListings(results, type, tags = {}) {
 
     const addToSet = {};
     const regionsToAdd = [autoRegion, tags.regionKey].filter(Boolean);
-    if (regionsToAdd.length) addToSet.regions = { $each: [...new Set(regionsToAdd)] };
+    if (regionsToAdd.length)
+      addToSet.regions = { $each: [...new Set(regionsToAdd)] };
     if (tags.ottKey) addToSet.ottProviders = tags.ottKey;
     if (tags.listTag) addToSet.listTags = tags.listTag;
 
@@ -475,6 +748,375 @@ export async function saveListings(results, type, tags = {}) {
   return ops.length;
 }
 
+const KEY_CREW_JOBS = new Set([
+  'Director',
+  'Series Director',
+  'Creator',
+  'Writer',
+  'Screenplay',
+  'Story',
+  'Producer',
+  'Executive Producer',
+  'Original Music Composer',
+  'Music',
+  'Music Director',
+  'Composer',
+  'Director of Photography',
+  'Editor',
+]);
+
+/**
+ * Resolves an actor/actress/director on TMDB, saves their genuine Movie & Web Series credits
+ * into MongoDB, AND explicitly injects the person into `cast` / `crew` / `directors` / `musicDirectors`
+ * on each credited document in MongoDB so that every returned movie or series is guaranteed to
+ * show that person in its Cast & Crew!
+ */
+export async function syncPersonCreditsToMongo({
+  name = '',
+  id = null,
+  fromSearch = false,
+} = {}) {
+  const cleanName = String(name || '').trim();
+  let tmdbPersonId =
+    Number.isInteger(Number(id)) && Number(id) > 0 ? Number(id) : null;
+  let personMeta = {
+    id: tmdbPersonId,
+    name: cleanName || 'Artist',
+    profilePath: null,
+    profileUrl: null,
+    knownForDepartment: 'Acting',
+    biography: '',
+    birthday: null,
+    placeOfBirth: '',
+    popularity: 0,
+  };
+
+  try {
+    if (!tmdbPersonId && cleanName.length >= 2) {
+      const searchRes = await tmdbGet('/search/person', {
+        query: cleanName,
+        page: 1,
+        include_adult: false,
+      });
+      const candidates = searchRes?.results || [];
+      if (!candidates.length) return null;
+
+      const normQ = cleanName
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .trim();
+      const normQCompact = normQ.replace(/\s+/g, '');
+
+      // Pick best person match
+      const best =
+        candidates.find((p) => {
+          const n = String(p.name || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .trim();
+          return n === normQ || n.replace(/\s+/g, '') === normQCompact;
+        }) ||
+        candidates.find((p) => {
+          const n = String(p.name || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .trim();
+          const words = n.split(/\s+/);
+          return (
+            normQ.length >= 3 &&
+            (n.startsWith(normQ) ||
+              n.endsWith(normQ) ||
+              words.includes(normQ) ||
+              normQ.includes(n)) &&
+            (p.popularity || 0) >= 1.2
+          );
+        }) ||
+        (!fromSearch ? candidates[0] : null);
+
+      if (!best) return null;
+
+      tmdbPersonId = best.id;
+      personMeta.id = best.id;
+      personMeta.name = best.name || personMeta.name;
+      personMeta.knownForDepartment = best.known_for_department || 'Acting';
+      personMeta.popularity = Number(best.popularity) || 0;
+      if (best.profile_path) {
+        personMeta.profilePath = best.profile_path;
+        personMeta.profileUrl = img(best.profile_path, 'w500');
+      }
+    }
+
+    if (!tmdbPersonId) return null;
+
+    const pData = await tmdbGet(`/person/${tmdbPersonId}`, {
+      append_to_response: 'combined_credits',
+    });
+    if (!pData) return null;
+
+    personMeta.id = pData.id || tmdbPersonId;
+    personMeta.name = pData.name || personMeta.name;
+    personMeta.knownForDepartment =
+      pData.known_for_department || personMeta.knownForDepartment;
+    personMeta.biography = pData.biography || '';
+    personMeta.birthday = pData.birthday || null;
+    personMeta.placeOfBirth = pData.place_of_birth || '';
+    personMeta.popularity =
+      Number(pData.popularity) || personMeta.popularity || 0;
+    if (pData.profile_path) {
+      personMeta.profilePath = pData.profile_path;
+      personMeta.profileUrl = img(pData.profile_path, 'w500');
+    }
+
+    // Filter out non-acting talk show / news / reality / archive-footage / self appearances
+    const rawCastCredits = (pData.combined_credits?.cast || []).filter((c) => {
+      if (!c || !c.id || !(c.title || c.name) || c.adult) return false;
+      if (!['movie', 'tv'].includes(c.media_type)) return false;
+      const gIds = c.genre_ids || [];
+      // Exclude Talk (10767), News (10763), Reality (10764), Soap (10766)
+      if (gIds.includes(10767) || gIds.includes(10763) || gIds.includes(10764))
+        return false;
+      const charStr = String(c.character || '').trim();
+      // Exclude archive footage, uncredited extras, or "Self / Himself / Herself / Guest" talk/doc appearances
+      if (
+        /\b(archive footage|uncredited|himself|herself|self|guest|host|contestant|judge)\b/i.test(
+          charStr,
+        )
+      ) {
+        return false;
+      }
+      // Exclude documentaries (99) unless the actor plays a named character role
+      if (gIds.includes(99) && !charStr) return false;
+      // For TV shows, exclude 1-episode minor guest cameos where billing order is deep
+      if (
+        c.media_type === 'tv' &&
+        Number(c.episode_count || 0) === 1 &&
+        (c.order ?? 99) > 15
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    const rawCrewCredits = (pData.combined_credits?.crew || []).filter((c) => {
+      if (!c || !c.id || !(c.title || c.name) || c.adult) return false;
+      if (!['movie', 'tv'].includes(c.media_type)) return false;
+      const gIds = c.genre_ids || [];
+      if (gIds.includes(10767) || gIds.includes(10763) || gIds.includes(10764))
+        return false;
+      return KEY_CREW_JOBS.has(c.job);
+    });
+
+    // Deduplicate and score credits by popularity & votes so the actor's genuine movies/series rank top
+    const scoreCredit = (c) =>
+      (Number(c.popularity) || 0) * 2 + (Number(c.vote_count) || 0) / 80;
+    const creditMap = new Map();
+
+    rawCastCredits.forEach((c) => {
+      const key = `${c.media_type}:${c.id}`;
+      const existing = creditMap.get(key);
+      if (!existing) {
+        creditMap.set(key, {
+          item: c,
+          mediaType: c.media_type,
+          tmdbId: Number(c.id),
+          isCast: true,
+          character: c.character || '',
+          order: c.order ?? 10,
+          crewJobs: [],
+          score: scoreCredit(c),
+        });
+      } else {
+        existing.isCast = true;
+        if (!existing.character && c.character)
+          existing.character = c.character;
+      }
+    });
+
+    rawCrewCredits.forEach((c) => {
+      const key = `${c.media_type}:${c.id}`;
+      const existing = creditMap.get(key);
+      if (!existing) {
+        creditMap.set(key, {
+          item: c,
+          mediaType: c.media_type,
+          tmdbId: Number(c.id),
+          isCast: false,
+          character: '',
+          order: 99,
+          crewJobs: [
+            { job: c.job || 'Crew', department: c.department || 'Production' },
+          ],
+          score: scoreCredit(c),
+        });
+      } else if (c.job && !existing.crewJobs.some((j) => j.job === c.job)) {
+        existing.crewJobs.push({
+          job: c.job,
+          department: c.department || 'Production',
+        });
+      }
+    });
+
+    const sortedCredits = Array.from(creditMap.values()).sort(
+      (a, b) => b.score - a.score,
+    );
+    const movieEntries = sortedCredits
+      .filter((e) => e.mediaType === 'movie')
+      .slice(0, 60);
+    const tvEntries = sortedCredits
+      .filter((e) => e.mediaType === 'tv')
+      .slice(0, 40);
+    const selectedEntries = [...movieEntries, ...tvEntries];
+
+    if (!selectedEntries.length) {
+      return { personMeta, creditPairs: [] };
+    }
+
+    await Promise.all([
+      movieEntries.length
+        ? saveListings(
+            movieEntries.map((e) => e.item),
+            'movie',
+          )
+        : null,
+      tvEntries.length
+        ? saveListings(
+            tvEntries.map((e) => e.item),
+            'tv',
+          )
+        : null,
+    ]);
+
+    const creditPairs = selectedEntries.map((e) => ({
+      mediaType: e.mediaType,
+      tmdbId: e.tmdbId,
+    }));
+
+    // Fetch existing docs for these creditPairs and explicitly ensure personMeta is present in cast/crew
+    const existingDocs = await Title.find({ $or: creditPairs })
+      .select(
+        'mediaType tmdbId cast crew directors writers producers musicDirectors',
+      )
+      .lean();
+    const docMap = new Map(
+      existingDocs.map((d) => [`${d.mediaType}:${d.tmdbId}`, d]),
+    );
+
+    const memberOps = [];
+    const lowerPersonName = String(personMeta.name).toLowerCase();
+
+    for (const entry of selectedEntries) {
+      const doc = docMap.get(`${entry.mediaType}:${entry.tmdbId}`);
+      if (!doc) continue;
+
+      const setFields = {};
+      const addToSetFields = {};
+
+      if (entry.isCast) {
+        const currentCast = Array.isArray(doc.cast) ? [...doc.cast] : [];
+        const idx = currentCast.findIndex(
+          (c) =>
+            (personMeta.id && c.id === personMeta.id) ||
+            String(c.name || '').toLowerCase() === lowerPersonName,
+        );
+        if (idx === -1) {
+          currentCast.push({
+            id: personMeta.id,
+            name: personMeta.name,
+            character: entry.character || '',
+            profilePath: personMeta.profilePath || null,
+            order: entry.order ?? currentCast.length,
+          });
+          setFields.cast = currentCast;
+        } else {
+          const existingCastMember = currentCast[idx];
+          if (
+            (!existingCastMember.id && personMeta.id) ||
+            (!existingCastMember.profilePath && personMeta.profilePath) ||
+            (!existingCastMember.character && entry.character)
+          ) {
+            currentCast[idx] = {
+              ...existingCastMember,
+              id: existingCastMember.id || personMeta.id,
+              name: existingCastMember.name || personMeta.name,
+              character: existingCastMember.character || entry.character || '',
+              profilePath:
+                existingCastMember.profilePath ||
+                personMeta.profilePath ||
+                null,
+            };
+            setFields.cast = currentCast;
+          }
+        }
+      }
+
+      if (entry.crewJobs.length > 0) {
+        const currentCrew = Array.isArray(doc.crew) ? [...doc.crew] : [];
+        let crewChanged = false;
+
+        for (const cj of entry.crewJobs) {
+          const exists = currentCrew.some(
+            (c) =>
+              ((personMeta.id && c.id === personMeta.id) ||
+                String(c.name || '').toLowerCase() === lowerPersonName) &&
+              String(c.job || '').toLowerCase() ===
+                String(cj.job || '').toLowerCase(),
+          );
+          if (!exists) {
+            currentCrew.push({
+              id: personMeta.id,
+              name: personMeta.name,
+              job: cj.job,
+              department: cj.department || 'Production',
+              profilePath: personMeta.profilePath || null,
+            });
+            crewChanged = true;
+          }
+
+          if (['Director', 'Series Director', 'Creator'].includes(cj.job)) {
+            addToSetFields.directors = personMeta.name;
+          } else if (['Writer', 'Screenplay', 'Story'].includes(cj.job)) {
+            addToSetFields.writers = personMeta.name;
+          } else if (['Producer', 'Executive Producer'].includes(cj.job)) {
+            addToSetFields.producers = personMeta.name;
+          } else if (/music|composer|score/i.test(cj.job || '')) {
+            addToSetFields.musicDirectors = personMeta.name;
+          }
+        }
+
+        if (crewChanged) {
+          setFields.crew = currentCrew;
+        }
+      }
+
+      if (
+        Object.keys(setFields).length > 0 ||
+        Object.keys(addToSetFields).length > 0
+      ) {
+        memberOps.push({
+          updateOne: {
+            filter: { mediaType: entry.mediaType, tmdbId: entry.tmdbId },
+            update: {
+              ...(Object.keys(setFields).length ? { $set: setFields } : {}),
+              ...(Object.keys(addToSetFields).length
+                ? { $addToSet: addToSetFields }
+                : {}),
+            },
+          },
+        });
+      }
+    }
+
+    if (memberOps.length > 0) {
+      await Title.bulkWrite(memberOps, { ordered: false });
+    }
+
+    return { personMeta, creditPairs };
+  } catch (err) {
+    logger.warn('syncPersonCreditsToMongo warning:', err.message);
+    return null;
+  }
+}
+
 /**
  * Cache-Aside Title Fetcher:
  * 1. Checks MongoDB first.
@@ -486,8 +1128,13 @@ async function resolveTitleBySlug(normalizedType, rawSlug) {
   const words = cleanSlug.split('-').filter(Boolean);
   if (!words.length) return null;
 
-  const escapedWords = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const flexRegex = new RegExp(`^[^a-zA-Z0-9]*${escapedWords.join('[^a-zA-Z0-9]+')}[^a-zA-Z0-9]*$`, 'i');
+  const escapedWords = words.map((w) =>
+    w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  );
+  const flexRegex = new RegExp(
+    `^[^a-zA-Z0-9]*${escapedWords.join('[^a-zA-Z0-9]+')}[^a-zA-Z0-9]*$`,
+    'i',
+  );
   const broadRegex = new RegExp(escapedWords.join('.*'), 'i');
 
   let candidates = await Title.find({
@@ -523,10 +1170,14 @@ async function resolveTitleBySlug(normalizedType, rawSlug) {
   if (exactMatch) return exactMatch;
 
   const queryText = words.join(' ');
-  const typesToTry = normalizedType === 'tv' ? ['tv', 'movie'] : ['movie', 'tv'];
+  const typesToTry =
+    normalizedType === 'tv' ? ['tv', 'movie'] : ['movie', 'tv'];
   for (const tType of typesToTry) {
     try {
-      const sData = await tmdbGet(`/search/${tType}`, { query: queryText, page: 1 });
+      const sData = await tmdbGet(`/search/${tType}`, {
+        query: queryText,
+        page: 1,
+      });
       const results = sData?.results || [];
       if (results.length > 0) {
         await saveListings(results, tType);
@@ -537,7 +1188,10 @@ async function resolveTitleBySlug(normalizedType, rawSlug) {
               slugifyTitle(r.original_title || r.original_name) === cleanSlug,
           ) || results[0];
         if (picked?.id) {
-          return await Title.findOne({ mediaType: tType, tmdbId: Number(picked.id) });
+          return await Title.findOne({
+            mediaType: tType,
+            tmdbId: Number(picked.id),
+          });
         }
       }
     } catch {
@@ -547,12 +1201,20 @@ async function resolveTitleBySlug(normalizedType, rawSlug) {
   return null;
 }
 
-export async function getOrFetchTitle(type, tmdbIdOrSlug, { details = false, forceRefresh = false, resetOverrides = false } = {}) {
+export async function getOrFetchTitle(
+  type,
+  tmdbIdOrSlug,
+  { details = false, forceRefresh = false, resetOverrides = false } = {},
+) {
   let normalizedType = type === 'webseries' ? 'tv' : type;
   let numericId = Number(tmdbIdOrSlug);
   let doc = null;
 
-  if (!Number.isInteger(numericId) || numericId <= 0 || !/^\d+$/.test(String(tmdbIdOrSlug).trim())) {
+  if (
+    !Number.isInteger(numericId) ||
+    numericId <= 0 ||
+    !/^\d+$/.test(String(tmdbIdOrSlug).trim())
+  ) {
     doc = await resolveTitleBySlug(normalizedType, String(tmdbIdOrSlug));
     if (!doc) {
       throw ApiError.notFound('Title not found for this name');
@@ -563,13 +1225,22 @@ export async function getOrFetchTitle(type, tmdbIdOrSlug, { details = false, for
     doc = await Title.findOne({ mediaType: normalizedType, tmdbId: numericId });
   }
 
-  if (doc && (!details || doc.detailsFetched || doc.isCustom) && !forceRefresh) {
+  if (
+    doc &&
+    (!details || doc.detailsFetched || doc.isCustom) &&
+    !forceRefresh
+  ) {
     return doc;
   }
 
   try {
+    const appendFields =
+      normalizedType === 'tv'
+        ? 'credits,aggregate_credits,videos,images,watch/providers,reviews,similar,recommendations,release_dates,content_ratings,keywords,external_ids'
+        : 'credits,videos,images,watch/providers,reviews,similar,recommendations,release_dates,content_ratings,keywords,external_ids';
+
     const data = await tmdbGet(`/${normalizedType}/${numericId}`, {
-      append_to_response: 'credits,videos,images,watch/providers,reviews,similar,recommendations,release_dates,content_ratings,keywords,external_ids',
+      append_to_response: appendFields,
       include_image_language: 'en,null,hi',
     });
     if (!data) {
@@ -577,14 +1248,22 @@ export async function getOrFetchTitle(type, tmdbIdOrSlug, { details = false, for
       throw ApiError.notFound('Title not found in database or TMDB');
     }
 
-    const updatePayload = fromDetails(data, normalizedType, resetOverrides ? null : doc, { resetOverrides });
+    const updatePayload = fromDetails(
+      data,
+      normalizedType,
+      resetOverrides ? null : doc,
+      { resetOverrides },
+    );
     doc = await Title.findOneAndUpdate(
       { mediaType: normalizedType, tmdbId: numericId },
       { $set: updatePayload },
       { upsert: true, new: true },
     );
 
-    const bonusListings = [...(data.similar?.results || []), ...(data.recommendations?.results || [])];
+    const bonusListings = [
+      ...(data.similar?.results || []),
+      ...(data.recommendations?.results || []),
+    ];
     if (bonusListings.length) {
       saveListings(bonusListings, normalizedType).catch(() => {});
     }
@@ -613,7 +1292,9 @@ export async function getOrFetchSeason(tmdbIdOrSlug, seasonNumber) {
     return existing;
   }
 
-  const data = await tmdbGet(`/tv/${tmdbId}/season/${sNum}`, { language: 'en-US' });
+  const data = await tmdbGet(`/tv/${tmdbId}/season/${sNum}`, {
+    language: 'en-US',
+  });
   if (!data) throw ApiError.notFound('Season not found');
 
   const seasonObj = {
@@ -634,8 +1315,14 @@ export async function getOrFetchSeason(tmdbIdOrSlug, seasonNumber) {
   };
 
   if (doc) {
-    await Title.updateOne({ _id: doc._id }, { $pull: { seasonsDetails: { seasonNumber: sNum } } });
-    await Title.updateOne({ _id: doc._id }, { $push: { seasonsDetails: seasonObj } });
+    await Title.updateOne(
+      { _id: doc._id },
+      { $pull: { seasonsDetails: { seasonNumber: sNum } } },
+    );
+    await Title.updateOne(
+      { _id: doc._id },
+      { $push: { seasonsDetails: seasonObj } },
+    );
   }
   return seasonObj;
 }
@@ -644,11 +1331,17 @@ export async function getOrFetchSeason(tmdbIdOrSlug, seasonNumber) {
 export const shapeTitle = (t) => {
   const posterUrl = t.customPosterUrl || img(t.posterPath, 'w500');
   const backdropUrl = t.customBackdropUrl || img(t.backdropPath, 'w1280');
-  const releaseStr = t.releaseDate ? new Date(t.releaseDate).toISOString().slice(0, 10) : t.year ? `${t.year}-01-01` : null;
+  const releaseStr = t.releaseDate
+    ? new Date(t.releaseDate).toISOString().slice(0, 10)
+    : t.year
+      ? `${t.year}-01-01`
+      : null;
   const genres =
     t.genres?.length > 0
       ? t.genres
-      : (t.genreIds || []).map((id) => ({ id, name: genreNames.get(id) })).filter((g) => g.name);
+      : (t.genreIds || [])
+          .map((id) => ({ id, name: genreNames.get(id) }))
+          .filter((g) => g.name);
 
   return {
     id: t.tmdbId,
@@ -683,13 +1376,23 @@ export const shapeTitle = (t) => {
     siteReviewCount: t.siteReviewCount || 0,
     criticRating: t.criticRating || 0,
     criticReviewCount: t.criticReviewCount || 0,
-    slug: slugifyTitle(t.title || t.originalTitle || `${t.mediaType}-${t.tmdbId}`),
+    slug: slugifyTitle(
+      t.title || t.originalTitle || `${t.mediaType}-${t.tmdbId}`,
+    ),
     budget: Number(t.budget) > 0 ? Number(t.budget) : 0,
-    revenue: Number(t.boxOffice?.worldwideCollection || t.revenue) > 0 ? Number(t.boxOffice?.worldwideCollection || t.revenue) : 0,
+    revenue:
+      Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
+        ? Number(t.boxOffice?.worldwideCollection || t.revenue)
+        : 0,
     financialEstimated: false,
     verdict:
-      Number(t.budget) > 0 && Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
-        ? t.boxOffice?.verdict || computeVerdict(t.budget, t.boxOffice?.worldwideCollection || t.revenue)
+      Number(t.budget) > 0 &&
+      Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
+        ? t.boxOffice?.verdict ||
+          computeVerdict(
+            t.budget,
+            t.boxOffice?.worldwideCollection || t.revenue,
+          )
         : t.boxOffice?.verdict && t.boxOffice.verdict !== 'TBA'
           ? t.boxOffice.verdict
           : '',
@@ -717,9 +1420,15 @@ export const shapeDetail = (t) => {
     duration: s.duration || '',
     language: s.language || t.originalLanguage || 'en',
     isOfficial: s.isOfficial !== false,
-    url: s.youtubeKey ? `https://www.youtube.com/watch?v=${s.youtubeKey}` : null,
-    embedUrl: s.youtubeKey ? `https://www.youtube.com/embed/${s.youtubeKey}` : null,
-    thumbnailUrl: s.youtubeKey ? `https://img.youtube.com/vi/${s.youtubeKey}/hqdefault.jpg` : null,
+    url: s.youtubeKey
+      ? `https://www.youtube.com/watch?v=${s.youtubeKey}`
+      : null,
+    embedUrl: s.youtubeKey
+      ? `https://www.youtube.com/embed/${s.youtubeKey}`
+      : null,
+    thumbnailUrl: s.youtubeKey
+      ? `https://img.youtube.com/vi/${s.youtubeKey}/hqdefault.jpg`
+      : null,
   }));
 
   const cast = (t.cast || []).map((c) => ({
@@ -750,12 +1459,16 @@ export const shapeDetail = (t) => {
       : 0;
   const profit = revenue > 0 && budget > 0 ? revenue - budget : 0;
   const roiPercent =
-    budget > 0 && revenue > 0 ? Math.round(((revenue - budget) / budget) * 100) : null;
+    budget > 0 && revenue > 0
+      ? Math.round(((revenue - budget) / budget) * 100)
+      : null;
 
   const boxOffice = {
     budget,
     revenue,
-    budgetFormatted: t.boxOffice?.budgetFormatted || (budget > 0 ? `$${budget.toLocaleString()}` : ''),
+    budgetFormatted:
+      t.boxOffice?.budgetFormatted ||
+      (budget > 0 ? `$${budget.toLocaleString()}` : ''),
     domesticCollection: t.boxOffice?.domesticCollection || 0,
     internationalCollection: t.boxOffice?.internationalCollection || 0,
     worldwideCollection: revenue,
@@ -805,8 +1518,8 @@ export const shapeDetail = (t) => {
     budget,
     revenue,
     boxOffice,
-    numberOfSeasons: t.numberOfSeasons || (t.seasons?.length || 0),
-    number_of_seasons: t.numberOfSeasons || (t.seasons?.length || 0),
+    numberOfSeasons: t.numberOfSeasons || t.seasons?.length || 0,
+    number_of_seasons: t.numberOfSeasons || t.seasons?.length || 0,
     numberOfEpisodes: t.numberOfEpisodes || 0,
     number_of_episodes: t.numberOfEpisodes || 0,
     seasons: (t.seasons || []).map((s) => ({
@@ -822,13 +1535,23 @@ export const shapeDetail = (t) => {
     credits: {
       cast,
       crew: [
-        ...(t.directors || []).map((name) => ({ name, job: 'Director', department: 'Directing' })),
-        ...(t.musicDirectors || []).map((name) => ({ name, job: 'Original Music Composer', department: 'Sound' })),
+        ...(t.directors || []).map((name) => ({
+          name,
+          job: 'Director',
+          department: 'Directing',
+        })),
+        ...(t.musicDirectors || []).map((name) => ({
+          name,
+          job: 'Original Music Composer',
+          department: 'Sound',
+        })),
         ...crew,
       ],
     },
     trailerKey: t.trailerKey || videos[0]?.key || null,
-    trailerUrl: t.trailerKey ? `https://www.youtube.com/watch?v=${t.trailerKey}` : null,
+    trailerUrl: t.trailerKey
+      ? `https://www.youtube.com/watch?v=${t.trailerKey}`
+      : null,
     videos: { results: videos },
     videoList: videos,
     songs,
@@ -858,19 +1581,32 @@ export const shapeDetail = (t) => {
 
 export async function titlesByPairs(pairs) {
   if (!pairs.length) return new Map();
-  const docs = await Title.find({ $or: pairs.map((p) => ({ mediaType: p.type, tmdbId: p.tmdbId })) });
-  return new Map(docs.map((d) => [`${d.mediaType}:${d.tmdbId}`, shapeTitle(d)]));
+  const docs = await Title.find({
+    $or: pairs.map((p) => ({ mediaType: p.type, tmdbId: p.tmdbId })),
+  });
+  return new Map(
+    docs.map((d) => [`${d.mediaType}:${d.tmdbId}`, shapeTitle(d)]),
+  );
 }
 
 /** Recalculates both User Community rating and Critic rating on a Title. */
 export async function recalcSiteRating(type, tmdbId) {
   const [userAgg, criticAgg] = await Promise.all([
     Review.aggregate([
-      { $match: { type, tmdbId, reviewType: { $ne: 'critic' }, isHidden: { $ne: true } } },
+      {
+        $match: {
+          type,
+          tmdbId,
+          reviewType: { $ne: 'critic' },
+          isHidden: { $ne: true },
+        },
+      },
       { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
     ]),
     Review.aggregate([
-      { $match: { type, tmdbId, reviewType: 'critic', isHidden: { $ne: true } } },
+      {
+        $match: { type, tmdbId, reviewType: 'critic', isHidden: { $ne: true } },
+      },
       { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
     ]),
   ]);
@@ -887,11 +1623,19 @@ export async function recalcSiteRating(type, tmdbId) {
 }
 
 // ======================= Filters & Cache-Aside Discovery =======================
-export const buildFilter = (q) => {
+export const buildFilter = (q, { personContext = null } = {}) => {
   const f = {};
-  if (q.type === 'webseries' || q.subType === 'webseries' || q.isWebSeries === 'true') {
+  if (
+    q.type === 'webseries' ||
+    q.subType === 'webseries' ||
+    q.isWebSeries === 'true'
+  ) {
     f.mediaType = 'tv';
-    f.$or = [{ isWebSeries: true }, { subType: 'webseries' }, { ottProviders: { $exists: true, $ne: [] } }];
+    f.$or = [
+      { isWebSeries: true },
+      { subType: 'webseries' },
+      { ottProviders: { $exists: true, $ne: [] } },
+    ];
   } else if (['movie', 'tv'].includes(q.type)) {
     f.mediaType = q.type;
   }
@@ -899,7 +1643,8 @@ export const buildFilter = (q) => {
   // Support TMDB-style parameters (`with_genres`, `with_original_language`, `primary_release_year`, `first_air_date_year`, `with_watch_providers`)
   const genreParam = q.genre ?? q.with_genres ?? '';
   const genres = toList(genreParam).map(Number).filter(Number.isInteger);
-  if (genres.length) f.genreIds = q.genreMode === 'all' ? { $all: genres } : { $in: genres };
+  if (genres.length)
+    f.genreIds = q.genreMode === 'all' ? { $all: genres } : { $in: genres };
 
   const year = toInt(q.year ?? q.primary_release_year ?? q.first_air_date_year);
   const from = toInt(q.yearFrom);
@@ -916,43 +1661,99 @@ export const buildFilter = (q) => {
     const ind = String(q.industry).toLowerCase();
     const langs = INDUSTRIES[ind];
     if (langs) {
-      f.$and = [...(f.$and || []), { $or: [{ regions: ind }, { originalLanguage: { $in: langs } }] }];
+      f.$and = [
+        ...(f.$and || []),
+        { $or: [{ regions: ind }, { originalLanguage: { $in: langs } }] },
+      ];
     } else {
       f.regions = ind;
     }
   }
 
   if (q.ott || q.with_watch_providers) {
-    const ottList = toList(q.ott || q.with_watch_providers).map((x) => x.toLowerCase());
-    const mappedKeys = ottList.map((k) => PROVIDER_ID_TO_KEY.get(Number(k)) || k);
+    const ottList = toList(q.ott || q.with_watch_providers).map((x) =>
+      x.toLowerCase(),
+    );
+    const mappedKeys = ottList.map(
+      (k) => PROVIDER_ID_TO_KEY.get(Number(k)) || k,
+    );
     f.ottProviders = { $in: mappedKeys };
   }
 
-  const rating = compact({ $gte: toNum(q.minRating ?? q['vote_average.gte']), $lte: toNum(q.maxRating) });
+  const rating = compact({
+    $gte: toNum(q.minRating ?? q['vote_average.gte']),
+    $lte: toNum(q.maxRating),
+  });
   if (Object.keys(rating).length) f.voteAverage = rating;
 
   if (toInt(q.minVotes ?? q['vote_count.gte'])) {
     f.voteCount = { $gte: toInt(q.minVotes ?? q['vote_count.gte']) };
   }
 
-  const runtime = compact({ $gte: toInt(q.minRuntime), $lte: toInt(q.maxRuntime) });
+  const runtime = compact({
+    $gte: toInt(q.minRuntime),
+    $lte: toInt(q.maxRuntime),
+  });
   if (Object.keys(runtime).length) f.runtime = runtime;
 
   if (q.q) {
     const cleanQ = String(q.q).trim().slice(0, 100);
     if (cleanQ) {
       const escaped = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      f.$and = [
-        ...(f.$and || []),
-        {
-          $or: [
-            { title: { $regex: escaped, $options: 'i' } },
-            { originalTitle: { $regex: escaped, $options: 'i' } },
-            { directors: { $regex: escaped, $options: 'i' } },
-            { 'cast.name': { $regex: escaped, $options: 'i' } },
-          ],
-        },
-      ];
+      const personMeta = personContext?.personMeta;
+      const creditPairs = personContext?.creditPairs || [];
+      const isPersonPrimary = Boolean(
+        personContext?.isPersonPrimary && personMeta,
+      );
+
+      if (isPersonPrimary) {
+        // When the query resolves to a known Actor / Actress / Director, strictly match titles
+        // where this person is in cast / crew / directors / writers / producers / musicDirectors!
+        const safePersonName = String(personMeta.name || cleanQ).replace(
+          /[.*+?^${}()|[\]\\]/g,
+          '\\$&',
+        );
+        const exactNameRegex = new RegExp(`^${safePersonName}$`, 'i');
+        const personOr = [
+          { 'cast.name': exactNameRegex },
+          { 'crew.name': exactNameRegex },
+          { directors: exactNameRegex },
+          { writers: exactNameRegex },
+          { producers: exactNameRegex },
+          { musicDirectors: exactNameRegex },
+        ];
+        if (personMeta.id) {
+          personOr.unshift(
+            { 'cast.id': personMeta.id },
+            { 'crew.id': personMeta.id },
+          );
+        }
+        if (creditPairs.length > 0) {
+          personOr.push(...creditPairs);
+        }
+        f.$and = [...(f.$and || []), { $or: personOr }];
+      } else {
+        const searchOr = [
+          { title: { $regex: escaped, $options: 'i' } },
+          { originalTitle: { $regex: escaped, $options: 'i' } },
+          { directors: { $regex: escaped, $options: 'i' } },
+          { writers: { $regex: escaped, $options: 'i' } },
+          { producers: { $regex: escaped, $options: 'i' } },
+          { musicDirectors: { $regex: escaped, $options: 'i' } },
+          { 'cast.name': { $regex: escaped, $options: 'i' } },
+          { 'crew.name': { $regex: escaped, $options: 'i' } },
+        ];
+        if (personMeta?.id) {
+          searchOr.push(
+            { 'cast.id': personMeta.id },
+            { 'crew.id': personMeta.id },
+          );
+        }
+        if (creditPairs.length > 0) {
+          searchOr.push(...creditPairs);
+        }
+        f.$and = [...(f.$and || []), { $or: searchOr }];
+      }
     }
   }
 
@@ -981,18 +1782,34 @@ const LIST_FIELDS =
 /**
  * Fetches from TMDB when a frontend query is NOT present in MongoDB, stores in MongoDB, and returns.
  */
-async function fetchFromTmdbAndStore(query = {}, listName = null) {
-  const rawType = query.type === 'webseries' ? 'tv' : ['movie', 'tv'].includes(query.type) ? query.type : 'movie';
+async function fetchFromTmdbAndStore(
+  query = {},
+  listName = null,
+  { skipTitleSearch = false } = {},
+) {
+  const rawType =
+    query.type === 'webseries'
+      ? 'tv'
+      : ['movie', 'tv'].includes(query.type)
+        ? query.type
+        : 'movie';
   const page = Math.max(1, toInt(query.page) || 1);
 
   try {
     // 1. Search query fallback
     if (query.q && String(query.q).trim().length >= 2) {
+      if (skipTitleSearch) return;
       const q = String(query.q).trim();
       if (['movie', 'tv'].includes(query.type)) {
-        const data = await tmdbGet(`/search/${rawType}`, { query: q, page, include_adult: false });
+        const data = await tmdbGet(`/search/${rawType}`, {
+          query: q,
+          page,
+          include_adult: false,
+        });
         if (data?.results?.length) {
-          await saveListings(data.results, rawType, { isWebSeries: query.type === 'webseries' });
+          await saveListings(data.results, rawType, {
+            isWebSeries: query.type === 'webseries',
+          });
         }
       } else {
         const [mData, tvData] = await Promise.all([
@@ -1012,7 +1829,8 @@ async function fetchFromTmdbAndStore(query = {}, listName = null) {
         popular: `/${rawType}/popular`,
         'top-rated': `/${rawType}/top_rated`,
         top_rated: `/${rawType}/top_rated`,
-        'now-playing': rawType === 'tv' ? '/tv/on_the_air' : '/movie/now_playing',
+        'now-playing':
+          rawType === 'tv' ? '/tv/on_the_air' : '/movie/now_playing',
         now_playing: rawType === 'tv' ? '/tv/on_the_air' : '/movie/now_playing',
         upcoming: rawType === 'tv' ? '/tv/airing_today' : '/movie/upcoming',
       };
@@ -1036,13 +1854,21 @@ async function fetchFromTmdbAndStore(query = {}, listName = null) {
     const genreParam = query.genre ?? query.with_genres;
     if (genreParam) params.with_genres = String(genreParam);
 
-    const year = toInt(query.year ?? query.primary_release_year ?? query.first_air_date_year);
+    const year = toInt(
+      query.year ?? query.primary_release_year ?? query.first_air_date_year,
+    );
     if (year) {
-      params[rawType === 'tv' ? 'first_air_date_year' : 'primary_release_year'] = year;
+      params[
+        rawType === 'tv' ? 'first_air_date_year' : 'primary_release_year'
+      ] = year;
     }
 
     const ind = query.industry ? String(query.industry).toLowerCase() : null;
-    const lang = query.language ?? query.lang ?? query.with_original_language ?? (ind && INDUSTRIES[ind]?.[0]);
+    const lang =
+      query.language ??
+      query.lang ??
+      query.with_original_language ??
+      (ind && INDUSTRIES[ind]?.[0]);
     if (lang && lang !== 'en-US') {
       params.with_original_language = String(lang).split(',')[0];
     }
@@ -1076,16 +1902,23 @@ async function fetchFromTmdbAndStore(query = {}, listName = null) {
  * Search + Filter + Sort + Paginate from MongoDB first.
  * If data for the request is not present in MongoDB, automatically calls TMDB, stores in MongoDB, and serves!
  */
-export async function findTitles(query = {}, { extra = {}, sort, listName = null, allowTmdbFallback = true } = {}) {
+export async function findTitles(
+  query = {},
+  { extra = {}, sort, listName = null, allowTmdbFallback = true } = {},
+) {
   const page = Math.max(1, toInt(query.page) || 1);
   const limit = Math.min(50, Math.max(1, toInt(query.limit) || 20));
   const skip = (page - 1) * limit;
-  if (skip > 50_000) throw ApiError.badRequest('Page too deep: narrow your filters instead');
+  if (skip > 50_000)
+    throw ApiError.badRequest('Page too deep: narrow your filters instead');
 
   // Random pick support (for "I'm Feeling Lucky")
   if (query.sort === 'random') {
     const base = buildFilter(query);
-    const sample = await Title.aggregate([{ $match: { adult: { $ne: true }, ...base } }, { $sample: { size: limit } }]);
+    const sample = await Title.aggregate([
+      { $match: { adult: { $ne: true }, ...base } },
+      { $sample: { size: limit } },
+    ]);
     const shaped = sample.map(shapeTitle);
     return {
       items: shaped,
@@ -1100,34 +1933,138 @@ export async function findTitles(query = {}, { extra = {}, sort, listName = null
     };
   }
 
-  const runMongoQuery = async () => {
-    const base = buildFilter(query);
-    let order = sort || SORTS[query.sort] || SORTS[query.sort_by] || SORTS.popularity;
-    if (['newest', 'oldest', 'release_date.desc'].includes(query.sort || query.sort_by)) {
+  // If the user is searching `query.q`, check whether `query.q` is an Actor / Actress / Director name
+  let personContext = null;
+  const cleanSearch = query.q ? String(query.q).trim() : '';
+
+  if (cleanSearch.length >= 2 && allowTmdbFallback) {
+    const synced = await syncPersonCreditsToMongo({
+      name: cleanSearch,
+      fromSearch: true,
+    });
+    if (synced && synced.personMeta && synced.creditPairs?.length > 0) {
+      const normQ = cleanSearch
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .trim();
+      const normName = String(synced.personMeta.name || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .trim();
+      const exactOrCloseName =
+        normName === normQ ||
+        normName.replace(/\s+/g, '') === normQ.replace(/\s+/g, '') ||
+        (normQ.split(/\s+/).length >= 2 &&
+          (normName.includes(normQ) || normQ.includes(normName)));
+
+      // Check if there is a mainstream movie/series with the exact same 1-word title and huge vote count
+      const escapedExact = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const exactTitleBlockbuster =
+        normQ.split(/\s+/).length === 1
+          ? await Title.findOne({
+              $or: [
+                { title: { $regex: `^${escapedExact}$`, $options: 'i' } },
+                {
+                  originalTitle: { $regex: `^${escapedExact}$`, $options: 'i' },
+                },
+              ],
+              voteCount: { $gte: 800 },
+            })
+              .select('_id popularity voteCount')
+              .lean()
+          : null;
+
+      const isPersonPrimary = Boolean(
+        exactOrCloseName &&
+        (!exactTitleBlockbuster || (synced.personMeta.popularity || 0) >= 8),
+      );
+
+      personContext = {
+        personMeta: synced.personMeta,
+        creditPairs: synced.creditPairs,
+        isPersonPrimary,
+      };
+    } else {
+      // Offline / MongoDB-only fallback: check if cleanSearch matches an existing cast.name or crew.name or directors in MongoDB
+      const escapedSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const exactRegex = new RegExp(`^${escapedSearch}$`, 'i');
+      const existingPersonDoc = await Title.findOne({
+        $or: [
+          { 'cast.name': exactRegex },
+          { 'crew.name': exactRegex },
+          { directors: exactRegex },
+        ],
+      })
+        .select('cast crew directors')
+        .lean();
+
+      if (existingPersonDoc) {
+        const matchedCast = (existingPersonDoc.cast || []).find((c) =>
+          exactRegex.test(c.name || ''),
+        );
+        const matchedCrew = (existingPersonDoc.crew || []).find((c) =>
+          exactRegex.test(c.name || ''),
+        );
+        personContext = {
+          personMeta: {
+            id: matchedCast?.id || matchedCrew?.id || null,
+            name: matchedCast?.name || matchedCrew?.name || cleanSearch,
+            profileUrl: img(
+              matchedCast?.profilePath || matchedCrew?.profilePath,
+              'w500',
+            ),
+            knownForDepartment: matchedCast ? 'Acting' : 'Directing',
+          },
+          creditPairs: [],
+          isPersonPrimary: true,
+        };
+      }
+    }
+  }
+
+  const runMongoQuery = async (ctx = personContext) => {
+    const base = buildFilter(query, { personContext: ctx });
+    let order =
+      sort || SORTS[query.sort] || SORTS[query.sort_by] || SORTS.popularity;
+    if (
+      ['newest', 'oldest', 'release_date.desc'].includes(
+        query.sort || query.sort_by,
+      )
+    ) {
       base.releaseDate = { $ne: null };
     }
     if (query.order && order) {
-      order = Object.fromEntries(Object.keys(order).map((k) => [k, query.order === 'asc' ? 1 : -1]));
+      order = Object.fromEntries(
+        Object.keys(order).map((k) => [k, query.order === 'asc' ? 1 : -1]),
+      );
     }
     const filter = { $and: [{ adult: { $ne: true } }, base, extra] };
     const [docs, total] = await Promise.all([
-      Title.find(filter).select(LIST_FIELDS).sort(order).skip(skip).limit(limit).lean(),
+      Title.find(filter)
+        .select(LIST_FIELDS)
+        .sort(order)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
       Title.countDocuments(filter, { limit: 100_000 }),
     ]);
     return { docs, total };
   };
 
-  let { docs, total } = await runMongoQuery();
-  let source = 'mongodb';
+  let { docs, total } = await runMongoQuery(personContext);
+  let source = personContext?.creditPairs?.length
+    ? 'tmdb_person_credits_cached'
+    : 'mongodb';
 
-  // Stick to main rule: if requested data is not in DB (or too few results on page 1 for search), fetch from TMDB -> store in DB -> serve!
+  // If requested data is not in DB (or too few results on page 1 for non-person search), fetch from TMDB -> store in DB -> serve!
   const needsFallback =
     allowTmdbFallback &&
+    !personContext?.isPersonPrimary &&
     (docs.length === 0 || (query.q && page === 1 && docs.length < 5));
 
   if (needsFallback) {
     await fetchFromTmdbAndStore(query, listName);
-    const retry = await runMongoQuery();
+    const retry = await runMongoQuery(personContext);
     docs = retry.docs;
     total = retry.total;
     source = 'tmdb_cached_to_mongodb';
@@ -1139,6 +2076,7 @@ export async function findTitles(query = {}, { extra = {}, sort, listName = null
   return {
     items: shaped,
     results: shaped, // TMDB API response compatibility
+    matchedPerson: personContext?.personMeta || null,
     page,
     limit,
     total,
@@ -1152,27 +2090,62 @@ export async function findTitles(query = {}, { extra = {}, sort, listName = null
 const daysAgo = (n) => new Date(Date.now() - n * 864e5);
 export const LISTS = {
   trending: () => ({
-    extra: { $or: [{ listTags: 'trending' }, { releaseDate: { $gte: daysAgo(730), $lte: new Date() }, voteCount: { $gte: 5 } }] },
+    extra: {
+      $or: [
+        { listTags: 'trending' },
+        {
+          releaseDate: { $gte: daysAgo(730), $lte: new Date() },
+          voteCount: { $gte: 5 },
+        },
+      ],
+    },
     sort: SORTS.popularity,
   }),
   popular: () => ({ extra: {}, sort: SORTS.popularity }),
-  'top-rated': () => ({ extra: { voteCount: { $gte: 200 } }, sort: SORTS.rating }),
-  top_rated: () => ({ extra: { voteCount: { $gte: 200 } }, sort: SORTS.rating }),
+  'top-rated': () => ({
+    extra: { voteCount: { $gte: 200 } },
+    sort: SORTS.rating,
+  }),
+  top_rated: () => ({
+    extra: { voteCount: { $gte: 200 } },
+    sort: SORTS.rating,
+  }),
   'now-playing': () => ({
-    extra: { $or: [{ listTags: 'now-playing' }, { releaseDate: { $gte: daysAgo(60), $lte: new Date() } }] },
+    extra: {
+      $or: [
+        { listTags: 'now-playing' },
+        { releaseDate: { $gte: daysAgo(60), $lte: new Date() } },
+      ],
+    },
     sort: SORTS.popularity,
   }),
   now_playing: () => ({
-    extra: { $or: [{ listTags: 'now-playing' }, { releaseDate: { $gte: daysAgo(60), $lte: new Date() } }] },
+    extra: {
+      $or: [
+        { listTags: 'now-playing' },
+        { releaseDate: { $gte: daysAgo(60), $lte: new Date() } },
+      ],
+    },
     sort: SORTS.popularity,
   }),
   upcoming: () => ({
-    extra: { $or: [{ listTags: 'upcoming' }, { releaseDate: { $gt: new Date() } }] },
+    extra: {
+      $or: [{ listTags: 'upcoming' }, { releaseDate: { $gt: new Date() } }],
+    },
     sort: { releaseDate: 1 },
   }),
-  'community-top': () => ({ extra: { siteReviewCount: { $gte: 1 } }, sort: SORTS.community }),
+  'community-top': () => ({
+    extra: { siteReviewCount: { $gte: 1 } },
+    sort: SORTS.community,
+  }),
   'box-office': () => ({ extra: { revenue: { $gt: 0 } }, sort: SORTS.revenue }),
-  webseries: () => ({ extra: { mediaType: 'tv', $or: [{ isWebSeries: true }, { subType: 'webseries' }] }, sort: SORTS.popularity }),
+  webseries: () => ({
+    extra: {
+      mediaType: 'tv',
+      $or: [{ isWebSeries: true }, { subType: 'webseries' }],
+    },
+    sort: SORTS.popularity,
+  }),
 };
 
 export const shapeCard = shapeTitle;
