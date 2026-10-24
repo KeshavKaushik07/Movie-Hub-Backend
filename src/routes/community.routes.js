@@ -13,6 +13,7 @@ import {
   deleteRoomMessage,
   createCommunityRoom,
   updateCommunityRoom,
+  deleteCommunityRoom,
 } from '../controller/community.controller.js';
 import { protect, optionalAuth, authorize } from '../middleware/auth.middleware.js';
 
@@ -23,6 +24,7 @@ r.get('/rooms', optionalAuth, listPublicRooms);
 r.post('/rooms/movie/:type/:tmdbId', optionalAuth, getOrCreateMovieRoom);
 r.post('/rooms', protect, authorize('admin', 'superadmin'), createCommunityRoom);
 r.patch('/rooms/:roomId', protect, authorize('admin', 'superadmin'), updateCommunityRoom);
+r.delete('/rooms/:roomId', protect, deleteCommunityRoom);
 
 // Room Messages & Real-Time SSE Stream
 r.get('/rooms/:roomId/messages', optionalAuth, listRoomMessages);

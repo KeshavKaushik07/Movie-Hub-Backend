@@ -5,6 +5,7 @@ import {
   removeUser,
   setRole,
   setActive,
+  adminChangeUserPassword,
   listAllReviews,
   moderateReview,
   adminDeleteReview,
@@ -24,7 +25,8 @@ router.get('/stats', getStats);
 // User Management
 router.get('/users', listUsers);
 router.patch('/users/:id/active', setActive);
-router.delete('/users/:id', authorize(ROLES.SUPERADMIN), removeUser);
+router.patch('/users/:id/password', adminChangeUserPassword);
+router.delete('/users/:id', removeUser);
 router.patch('/users/:id/role', authorize(ROLES.SUPERADMIN), setRole);
 
 // Reviews & Critic Reviews Moderation (Admin + SuperAdmin)

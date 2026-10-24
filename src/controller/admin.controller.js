@@ -183,6 +183,33 @@ export const setRole = asyncHandler(async (req, res) => {
   res.json({ success: true, user: target });
 });
 
+export const adminChangeUserPassword = asyncHandler(async (req, res) => {
+  const { newPassword } = req.body;
+  const cleanPassword = String(newPassword || '').trim();
+  if (cleanPassword.length < 6) {
+    throw ApiError.badRequest('New password must be at least 6 characters long');
+  }
+
+  const target = await User.findById(req.params.id).select('+password +refreshTokens');
+  if (!target) throw ApiError.notFound('User not found');
+
+  if (target.role !== 'user' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Only a SuperAdmin can change an Admin or SuperAdmin password');
+  }
+
+  target.password = cleanPassword;
+  target.loginAttempts = 0;
+  target.lockUntil = undefined;
+  target.refreshTokens = [];
+  await target.save();
+
+  res.json({
+    success: true,
+    message: `Password updated for ${target.name}`,
+    user: target,
+  });
+});
+
 export const removeUser = asyncHandler(async (req, res) => {
   const target = await User.findById(req.params.id);
   if (!target) throw ApiError.notFound('User not found');

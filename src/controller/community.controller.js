@@ -674,3 +674,41 @@ export const updateCommunityRoom = asyncHandler(async (req, res) => {
     room: shapeRoom(room, req.user._id),
   });
 });
+
+/**
+ * Admin / SuperAdmin (or DM Participant for DM rooms): Delete a Community / Chat Room and its messages
+ * DELETE /api/v1/community/rooms/:roomId
+ */
+export const deleteCommunityRoom = asyncHandler(async (req, res) => {
+  const { roomId } = req.params;
+  const query = mongoose.Types.ObjectId.isValid(roomId)
+    ? { _id: roomId }
+    : { slug: String(roomId).toLowerCase() };
+
+  const room = await CommunityRoom.findOne(query);
+  if (!room) throw ApiError.notFound('Community room not found');
+
+  const isStaff = ['admin', 'superadmin'].includes(req.user.role);
+  const isCreator = room.createdBy && String(room.createdBy) === String(req.user._id);
+  const isDmParticipant =
+    room.roomType === 'dm' &&
+    (room.participants || []).some((p) => String(p._id || p) === String(req.user._id));
+
+  if (!isStaff && !isCreator && !isDmParticipant) {
+    throw ApiError.forbidden('You do not have permission to delete this community chat room');
+  }
+
+  const deletedId = String(room._id);
+  await Promise.all([
+    CommunityMessage.deleteMany({ room: room._id }),
+    room.deleteOne(),
+  ]);
+
+  emitRoomEvent(deletedId, 'room_deleted', { roomId: deletedId });
+
+  res.json({
+    success: true,
+    deletedId,
+    message: 'Community chat room and all messages deleted',
+  });
+});
