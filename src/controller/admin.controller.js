@@ -10,7 +10,7 @@ import CommunityRoom from '../models/CommunityRoom.js';
 import CommunityMessage from '../models/CommunityMessage.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { recalcSiteRating as recalculateRatings } from '../services/title.service.js';
+import { recalcSiteRating as recalculateRatings, titlesByPairs } from '../services/title.service.js';
 import { getCrawlerStatus } from '../services/crawler.service.js';
 
 export const getStats = asyncHandler(async (_req, res) => {
@@ -232,7 +232,7 @@ export const removeUser = asyncHandler(async (req, res) => {
 
 export const listAllReviews = asyncHandler(async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = 25;
+  const limit = 40;
   const filter = {};
   if (req.query.reviewType) filter.reviewType = req.query.reviewType;
   if (req.query.hidden !== undefined && req.query.hidden !== '') {
@@ -248,9 +248,27 @@ export const listAllReviews = asyncHandler(async (req, res) => {
     Review.countDocuments(filter),
   ]);
 
+  const pairs = items.map((r) => ({ type: r.type, tmdbId: r.tmdbId }));
+  const titleMap = await titlesByPairs(pairs);
+
+  const enriched = items.map((r) => {
+    const obj = r.toObject ? r.toObject() : r;
+    const tObj = titleMap.get(`${r.type}:${r.tmdbId}`) || null;
+    return {
+      ...obj,
+      id: String(obj._id || obj.id),
+      headline: obj.headline || obj.title || '',
+      text: obj.text || obj.body || '',
+      movieTitle: tObj?.title || `${r.type.toUpperCase()} #${r.tmdbId}`,
+      moviePoster: tObj?.posterUrl || '',
+      movieYear: tObj?.year || '',
+      titleObj: tObj,
+    };
+  });
+
   res.json({
     success: true,
-    reviews: items,
+    reviews: enriched,
     page,
     total,
     totalPages: Math.ceil(total / limit) || 1,
@@ -258,21 +276,56 @@ export const listAllReviews = asyncHandler(async (req, res) => {
 });
 
 export const moderateReview = asyncHandler(async (req, res) => {
-  const review = await Review.findById(req.params.id);
+  const review = await Review.findById(req.params.id).populate('user', 'name email role avatarColor');
   if (!review) throw ApiError.notFound('Review not found');
 
-  const { isHidden, isFeatured, spoiler, rating, title, body } = req.body;
+  const {
+    isHidden,
+    isFeatured,
+    spoiler,
+    rating,
+    headline,
+    title,
+    text,
+    body,
+    criticName,
+    publication,
+    externalUrl,
+  } = req.body;
+
   if (typeof isHidden === 'boolean') review.isHidden = isHidden;
   if (typeof isFeatured === 'boolean') review.isFeatured = isFeatured;
   if (typeof spoiler === 'boolean') review.spoiler = spoiler;
   if (rating !== undefined) review.rating = Math.min(10, Math.max(1, Number(rating)));
-  if (title !== undefined) review.title = String(title).trim();
-  if (body !== undefined) review.body = String(body).trim();
+  if (headline !== undefined || title !== undefined) {
+    review.headline = String(headline ?? title ?? '').trim();
+  }
+  if (text !== undefined || body !== undefined) {
+    review.text = String(text ?? body ?? '').trim();
+  }
+  if (criticName !== undefined) review.criticName = String(criticName).trim();
+  if (publication !== undefined) review.publication = String(publication).trim();
+  if (externalUrl !== undefined) review.externalUrl = String(externalUrl).trim();
 
   await review.save();
   await recalculateRatings(review.type, review.tmdbId);
 
-  res.json({ success: true, review });
+  const titleMap = await titlesByPairs([{ type: review.type, tmdbId: review.tmdbId }]);
+  const tObj = titleMap.get(`${review.type}:${review.tmdbId}`) || null;
+  const obj = review.toObject();
+
+  res.json({
+    success: true,
+    message: 'Review updated',
+    review: {
+      ...obj,
+      id: String(obj._id),
+      movieTitle: tObj?.title || `${review.type.toUpperCase()} #${review.tmdbId}`,
+      moviePoster: tObj?.posterUrl || '',
+      movieYear: tObj?.year || '',
+      titleObj: tObj,
+    },
+  });
 });
 
 export const adminDeleteReview = asyncHandler(async (req, res) => {
@@ -301,9 +354,23 @@ export const listAllComments = asyncHandler(async (req, res) => {
     Comment.countDocuments(filter),
   ]);
 
+  const pairs = items.map((c) => ({ type: c.type, tmdbId: c.tmdbId }));
+  const titleMap = await titlesByPairs(pairs);
+  const enrichedComments = items.map((c) => {
+    const obj = c.toObject ? c.toObject() : c;
+    const tObj = titleMap.get(`${c.type}:${c.tmdbId}`) || null;
+    return {
+      ...obj,
+      id: String(obj._id || obj.id),
+      movieTitle: tObj?.title || `${c.type.toUpperCase()} #${c.tmdbId}`,
+      moviePoster: tObj?.posterUrl || '',
+      movieYear: tObj?.year || '',
+    };
+  });
+
   res.json({
     success: true,
-    comments: items,
+    comments: enrichedComments,
     page,
     total,
     totalPages: Math.ceil(total / limit) || 1,

@@ -49,6 +49,7 @@ const userSchema = new mongoose.Schema(
     googleId: { type: String },
     avatarColor: { type: String },
     bio: { type: String, maxlength: 300, default: '' },
+    location: { type: String, trim: true, maxlength: 100, default: 'India' },
     favoriteGenres: { type: [String], default: [] },
     preferences: {
       type: userPreferencesSchema,

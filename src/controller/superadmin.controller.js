@@ -321,11 +321,32 @@ export const syncTitleFromTmdb = asyncHandler(async (req, res) => {
   const rawType = String(req.params.type || '').toLowerCase();
   const mediaType = rawType === 'webseries' ? 'tv' : rawType;
   const tmdbId = Number(req.params.tmdbId);
-  if (req.body?.unlockAll) {
-    await Title.updateOne({ mediaType, tmdbId }, { $set: { lockedFields: [] } });
+  const unlockAll = req.body?.unlockAll !== false;
+
+  if (unlockAll) {
+    await Title.updateOne(
+      { mediaType, tmdbId },
+      {
+        $set: {
+          lockedFields: [],
+          isCustom: false,
+          lastEditedBy: null,
+          lastEditedAt: null,
+        },
+      },
+    );
   }
-  const doc = await getOrFetchTitle(mediaType, tmdbId, { details: true, forceRefresh: true });
-  res.json({ title: shapeDetail(doc), message: 'Synced latest details from TMDB' });
+
+  const doc = await getOrFetchTitle(mediaType, tmdbId, {
+    details: true,
+    forceRefresh: true,
+    resetOverrides: unlockAll,
+  });
+
+  res.json({
+    title: shapeDetail(doc),
+    message: 'Synced with TMDB — all manual edits replaced with official TMDB data',
+  });
 });
 
 export const deleteTitleFromDb = asyncHandler(async (req, res) => {

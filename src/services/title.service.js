@@ -263,18 +263,19 @@ const extractVideosAndSongs = (d, existingDoc = null) => {
   };
 };
 
-export const fromDetails = (d, type, existingDoc = null) => {
-  const locked = new Set(existingDoc?.lockedFields || []);
+export const fromDetails = (d, type, existingDoc = null, { resetOverrides = false } = {}) => {
+  const baseDoc = resetOverrides ? null : existingDoc;
+  const locked = resetOverrides ? new Set() : new Set(baseDoc?.lockedFields || []);
   const listing = fromListing({ ...d, genre_ids: (d.genres || []).map((g) => g.id) }, type);
   const { autoRegion, ...baseListing } = listing;
 
   const { watchProviders, ottKeys } = extractWatchProviders(d);
-  const { trailerKey, videos, songs } = extractVideosAndSongs(d, existingDoc);
+  const { trailerKey, videos, songs } = extractVideosAndSongs(d, baseDoc);
 
   const networks = (d.networks || []).map((n) => ({ id: n.id, name: n.name, logoPath: n.logo_path }));
   const hasOttNetwork = networks.some((n) => WEB_SERIES_NETWORKS.test(n.name || ''));
   const isWebSeries =
-    type === 'tv' && (existingDoc?.isWebSeries || hasOttNetwork || ottKeys.length > 0 || (d.type && /miniseries|scripted/i.test(d.type)));
+    type === 'tv' && (baseDoc?.isWebSeries || hasOttNetwork || ottKeys.length > 0 || (d.type && /miniseries|scripted/i.test(d.type)));
 
   const crewList = d.credits?.crew || [];
   const directors =
@@ -294,9 +295,12 @@ export const fromDetails = (d, type, existingDoc = null) => {
     .map((c) => c.name)
     .slice(0, 6);
 
-  const budget = d.budget || existingDoc?.budget || 0;
-  const revenue = d.revenue || existingDoc?.revenue || 0;
-  const existingBox = existingDoc?.boxOffice ? existingDoc.boxOffice.toObject?.() || existingDoc.boxOffice : {};
+  const budget = resetOverrides ? Number(d.budget) || 0 : d.budget || baseDoc?.budget || 0;
+  const revenue = resetOverrides ? Number(d.revenue) || 0 : d.revenue || baseDoc?.revenue || 0;
+  const existingBox =
+    !resetOverrides && baseDoc?.boxOffice
+      ? baseDoc.boxOffice.toObject?.() || baseDoc.boxOffice
+      : {};
 
   const boxOffice = {
     budgetFormatted: existingBox.budgetFormatted || (budget > 0 ? `$${budget.toLocaleString()}` : ''),
@@ -323,8 +327,8 @@ export const fromDetails = (d, type, existingDoc = null) => {
   }));
 
   const keywordsRaw = d.keywords?.keywords || d.keywords?.results || [];
-  const regionsSet = new Set([...(existingDoc?.regions || []), ...(autoRegion ? [autoRegion] : [])]);
-  const ottSet = new Set([...(existingDoc?.ottProviders || []), ...ottKeys]);
+  const regionsSet = new Set([...(baseDoc?.regions || []), ...(autoRegion ? [autoRegion] : [])]);
+  const ottSet = new Set([...(baseDoc?.ottProviders || []), ...ottKeys]);
   networks.forEach((n) => {
     const lower = (n.name || '').toLowerCase();
     if (lower.includes('netflix')) ottSet.add('netflix');
@@ -342,12 +346,14 @@ export const fromDetails = (d, type, existingDoc = null) => {
     ...baseListing,
     subType: type === 'tv' ? (isWebSeries ? 'webseries' : 'tv') : 'movie',
     isWebSeries,
-    tagline: d.tagline || undefined,
-    status: d.status,
-    homepage: d.homepage || undefined,
+    tagline: resetOverrides ? d.tagline || '' : d.tagline || undefined,
+    status: d.status || 'Released',
+    homepage: resetOverrides ? d.homepage || '' : d.homepage || undefined,
     imdbId: d.imdb_id || d.external_ids?.imdb_id || undefined,
-    certification: extractCertification(d, type),
-    runtime: d.runtime || d.episode_run_time?.[0] || undefined,
+    certification: resetOverrides ? extractCertification(d, type) || '' : extractCertification(d, type),
+    runtime: resetOverrides
+      ? d.runtime || d.episode_run_time?.[0] || 0
+      : d.runtime || d.episode_run_time?.[0] || undefined,
     genres: (d.genres || []).map(({ id, name }) => ({ id, name })),
     countries: (d.production_countries || []).map((c) => c.name),
     languages: (d.spoken_languages || []).map((l) => l.english_name || l.name).filter(Boolean),
@@ -375,7 +381,7 @@ export const fromDetails = (d, type, existingDoc = null) => {
       overview: s.overview,
       voteAverage: s.vote_average,
     })),
-    trailerKey,
+    trailerKey: resetOverrides ? trailerKey || '' : trailerKey,
     videos,
     songs,
     images: {
@@ -405,11 +411,23 @@ export const fromDetails = (d, type, existingDoc = null) => {
     detailsFetched: true,
     detailsFailed: false,
     detailsFetchedAt: new Date(),
+    ...(resetOverrides
+      ? {
+          posterPath: d.poster_path || '',
+          backdropPath: d.backdrop_path || '',
+          lockedFields: [],
+          isCustom: false,
+          lastEditedBy: null,
+          lastEditedAt: null,
+        }
+      : {}),
   });
 
-  // Respect SuperAdmin lockedFields so manual edits are never overwritten
-  for (const field of locked) {
-    delete candidate[field];
+  // Respect SuperAdmin lockedFields so manual edits are never overwritten (unless resetOverrides is true)
+  if (!resetOverrides) {
+    for (const field of locked) {
+      delete candidate[field];
+    }
   }
 
   return candidate;
@@ -529,7 +547,7 @@ async function resolveTitleBySlug(normalizedType, rawSlug) {
   return null;
 }
 
-export async function getOrFetchTitle(type, tmdbIdOrSlug, { details = false, forceRefresh = false } = {}) {
+export async function getOrFetchTitle(type, tmdbIdOrSlug, { details = false, forceRefresh = false, resetOverrides = false } = {}) {
   let normalizedType = type === 'webseries' ? 'tv' : type;
   let numericId = Number(tmdbIdOrSlug);
   let doc = null;
@@ -559,7 +577,7 @@ export async function getOrFetchTitle(type, tmdbIdOrSlug, { details = false, for
       throw ApiError.notFound('Title not found in database or TMDB');
     }
 
-    const updatePayload = fromDetails(data, normalizedType, doc);
+    const updatePayload = fromDetails(data, normalizedType, resetOverrides ? null : doc, { resetOverrides });
     doc = await Title.findOneAndUpdate(
       { mediaType: normalizedType, tmdbId: numericId },
       { $set: updatePayload },

@@ -54,6 +54,15 @@ const shapeRoom = (r, currentUserId = null) => {
     lastMessageAt: obj.lastMessageAt,
     lastMessagePreview: obj.lastMessagePreview?.text ? obj.lastMessagePreview : null,
     dmPeer,
+    createdBy:
+      obj.createdBy && typeof obj.createdBy === 'object' && obj.createdBy.name
+        ? {
+            id: String(obj.createdBy._id || obj.createdBy.id),
+            name: obj.createdBy.name,
+            email: obj.createdBy.email || '',
+            role: obj.createdBy.role || 'admin',
+          }
+        : null,
     createdAt: obj.createdAt,
   };
 };
@@ -118,6 +127,7 @@ export const listPublicRooms = asyncHandler(async (req, res) => {
   }
 
   const rooms = await CommunityRoom.find(filter)
+    .populate('createdBy', 'name email role avatarColor')
     .sort({ isOfficial: -1, lastMessageAt: -1 })
     .limit(60)
     .lean();
