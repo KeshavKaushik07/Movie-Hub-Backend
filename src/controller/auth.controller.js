@@ -2,14 +2,50 @@ import User from '../models/User.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import env from '../config/env.js';
-import { COOKIES } from '../config/constant.js';
+import { API_PREFIX, COOKIES } from '../config/constant.js';
 import { assertStrongPassword } from '../utils/password.js';
-import { issueTokens, signAccess, verifyRefresh, hash, clearRefreshCookie } from '../utils/tokens.js';
+import {
+  issueTokens,
+  signAccess,
+  verifyRefresh,
+  hash,
+  clearRefreshCookie,
+  cookieOpts,
+} from '../utils/tokens.js';
 
 const EMAIL = /^\S+@\S+\.\S+$/;
-// Prefer explicit body/header refresh token first (so multi-tab chat testing with 2 accounts never collides on browser cookie)
-const readRefresh = (req) =>
-  req.body?.refresh || req.headers['x-refresh-token'] || req.cookies?.[COOKIES.REFRESH];
+
+/**
+ * Collects all possible refresh token candidates from body, header, and Cookie header.
+ * If the browser has both a legacy `/api/v1/auth` cookie and a root `/` cookie,
+ * testing all candidates ensures a stale path-specific cookie never blocks a valid root cookie!
+ */
+const extractRefreshCandidates = (req) => {
+  const candidates = [];
+  if (req.body?.refresh && typeof req.body.refresh === 'string') {
+    candidates.push(req.body.refresh.trim());
+  }
+  if (req.headers['x-refresh-token'] && typeof req.headers['x-refresh-token'] === 'string') {
+    candidates.push(req.headers['x-refresh-token'].trim());
+  }
+  if (req.cookies?.[COOKIES.REFRESH]) {
+    candidates.push(req.cookies[COOKIES.REFRESH]);
+  }
+  const rawCookieHeader = req.headers?.cookie || '';
+  if (rawCookieHeader) {
+    for (const part of rawCookieHeader.split(';')) {
+      const [k, ...rest] = part.trim().split('=');
+      if (k === COOKIES.REFRESH && rest.length) {
+        try {
+          candidates.push(decodeURIComponent(rest.join('=')));
+        } catch {
+          candidates.push(rest.join('='));
+        }
+      }
+    }
+  }
+  return [...new Set(candidates.filter(Boolean))];
+};
 
 const sanitizePreferences = (raw) => {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -98,37 +134,58 @@ export const login = asyncHandler(async (req, res) => {
 
 // POST /auth/refresh -> { access, refresh, user }
 export const refresh = asyncHandler(async (req, res) => {
-  const token = readRefresh(req);
-  if (!token) throw ApiError.unauthorized('No refresh token');
-  const payload = verifyRefresh(token);
+  const candidates = extractRefreshCandidates(req);
+  if (!candidates.length) throw ApiError.unauthorized('No refresh token');
 
-  // Find user by ID; if refreshTokens hash exists or user is valid, issue fresh access token
-  let user = await User.findOne({ _id: payload.sub, 'refreshTokens.tokenHash': hash(token) });
-  if (!user) {
-    // Graceful fallback if token is a valid signed JWT for an active user whose array rotated
-    user = await User.findById(payload.sub);
+  let validToken = null;
+  let validUser = null;
+
+  for (const candidate of candidates) {
+    try {
+      const payload = verifyRefresh(candidate);
+      let user = await User.findOne({
+        _id: payload.sub,
+        'refreshTokens.tokenHash': hash(candidate),
+      });
+      if (!user) {
+        user = await User.findById(payload.sub);
+      }
+      if (user) {
+        validToken = candidate;
+        validUser = user;
+        break;
+      }
+    } catch {
+      /* try next candidate */
+    }
   }
-  if (!user) throw ApiError.unauthorized('Session expired, please log in again');
-  if (!user.isActive) throw ApiError.forbidden('This account has been deactivated');
 
-  res.cookie(COOKIES.REFRESH, token, {
-    httpOnly: true,
-    secure: env.isProd,
-    sameSite: env.cookie.sameSite,
-    domain: env.cookie.domain,
-    path: '/',
+  if (!validUser || !validToken) {
+    throw ApiError.unauthorized('Session expired, please log in again');
+  }
+  if (!validUser.isActive) {
+    throw ApiError.forbidden('This account has been deactivated');
+  }
+
+  // Clear any legacy path-specific cookie and refresh the root '/' cookie
+  res.clearCookie(COOKIES.REFRESH, cookieOpts(`${API_PREFIX}/auth`));
+  res.clearCookie(COOKIES.REFRESH, cookieOpts('/api/v1/auth'));
+  res.cookie(COOKIES.REFRESH, validToken, {
+    ...cookieOpts('/'),
     maxAge: env.jwt.refreshDays * 864e5,
   });
-  res.json({ access: signAccess(user), refresh: token, user });
+
+  res.json({ access: signAccess(validUser), refresh: validToken, user: validUser });
 });
 
 // POST /auth/logout -> 204
 export const logout = asyncHandler(async (req, res) => {
-  const token = readRefresh(req);
-  if (token) {
-    await User.updateOne(
-      { 'refreshTokens.tokenHash': hash(token) },
-      { $pull: { refreshTokens: { tokenHash: hash(token) } } },
+  const candidates = extractRefreshCandidates(req);
+  if (candidates.length) {
+    const hashes = candidates.map((t) => hash(t));
+    await User.updateMany(
+      { 'refreshTokens.tokenHash': { $in: hashes } },
+      { $pull: { refreshTokens: { tokenHash: { $in: hashes } } } },
     );
   }
   clearRefreshCookie(res);

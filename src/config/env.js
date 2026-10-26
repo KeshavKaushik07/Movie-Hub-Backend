@@ -7,6 +7,7 @@ const num = (v, fallback) => (Number.isFinite(Number(v)) && v !== undefined && v
 
 const env = {
   isProd: e.NODE_ENV === 'production',
+  nodeEnv:e.NODE_ENV,
   port: num(e.PORT, 5000),
   mongoUri: e.MONGO_URI,
   origins: (e.CORS_ORIGINS || e.CLIENT_URL || 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean),

@@ -6,7 +6,10 @@ import User from '../models/User.js';
 import ApiError from './ApiError.js';
 
 export const signAccess = (u) =>
-  jwt.sign({ sub: u.id, role: u.role }, env.jwt.accessSecret, { algorithm: 'HS256', expiresIn: env.jwt.accessTtl });
+  jwt.sign({ sub: u.id || String(u._id), role: u.role }, env.jwt.accessSecret, {
+    algorithm: 'HS256',
+    expiresIn: env.jwt.accessTtl,
+  });
 
 export const hash = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
@@ -18,7 +21,7 @@ export const verifyRefresh = (token) => {
   }
 };
 
-const cookieOpts = (path = '/') => ({
+export const cookieOpts = (path = '/') => ({
   httpOnly: true,
   secure: env.isProd,
   sameSite: env.cookie.sameSite,
@@ -29,11 +32,14 @@ const cookieOpts = (path = '/') => ({
 export const clearRefreshCookie = (res) => {
   res.clearCookie(COOKIES.REFRESH, cookieOpts('/'));
   res.clearCookie(COOKIES.REFRESH, cookieOpts(`${API_PREFIX}/auth`));
+  res.clearCookie(COOKIES.REFRESH, cookieOpts('/api/v1/auth'));
 };
 
 export const issueTokens = async (user, res) => {
+  const userId = user.id || String(user._id);
   const access = signAccess(user);
-  const refresh = jwt.sign({ sub: user.id, jti: crypto.randomUUID() }, env.jwt.refreshSecret, {
+  const refresh = jwt.sign({ sub: userId, jti: crypto.randomUUID() }, env.jwt.refreshSecret, {
+    algorithm: 'HS256',
     expiresIn: `${env.jwt.refreshDays}d`,
   });
   const expiresAt = new Date(Date.now() + env.jwt.refreshDays * 864e5);
@@ -41,6 +47,9 @@ export const issueTokens = async (user, res) => {
     { _id: user._id },
     { $push: { refreshTokens: { $each: [{ tokenHash: hash(refresh), expiresAt }], $slice: -25 } } },
   );
+  // Clear any legacy path-scoped refreshToken cookies so they never shadow the root '/' cookie
+  res.clearCookie(COOKIES.REFRESH, cookieOpts(`${API_PREFIX}/auth`));
+  res.clearCookie(COOKIES.REFRESH, cookieOpts('/api/v1/auth'));
   res.cookie(COOKIES.REFRESH, refresh, { ...cookieOpts('/'), maxAge: env.jwt.refreshDays * 864e5 });
   return { access, refresh };
 };
