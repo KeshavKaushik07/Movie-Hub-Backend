@@ -111,6 +111,14 @@ export const refresh = asyncHandler(async (req, res) => {
   if (!user) throw ApiError.unauthorized('Session expired, please log in again');
   if (!user.isActive) throw ApiError.forbidden('This account has been deactivated');
 
+  res.cookie(COOKIES.REFRESH, token, {
+    httpOnly: true,
+    secure: env.isProd,
+    sameSite: env.cookie.sameSite,
+    domain: env.cookie.domain,
+    path: '/',
+    maxAge: env.jwt.refreshDays * 864e5,
+  });
   res.json({ access: signAccess(user), refresh: token, user });
 });
 
