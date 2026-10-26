@@ -8,10 +8,34 @@ export const slugifyTitle = (str = '') =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+export const normalizeMediaType = (rawType = '') => {
+  const clean = String(rawType || '').toLowerCase().trim();
+  if (
+    [
+      'tv',
+      'tv-show',
+      'tv-shows',
+      'tvshow',
+      'tvshows',
+      'tv-series',
+      'tvseries',
+      'webseries',
+      'web-series',
+      'series',
+    ].includes(clean)
+  ) {
+    return 'tv';
+  }
+  if (['movie', 'movies', 'film', 'films'].includes(clean)) {
+    return 'movie';
+  }
+  return clean;
+};
+
 // Reads /titles/:type/:tmdbId from the URL. Accepts EITHER a numeric TMDB ID OR a title slug (e.g. /titles/movie/mirzapur)
 export const parseTitle = (req) => {
-  const rawType = String(req.params.type || '').toLowerCase();
-  const type = rawType === 'webseries' ? 'tv' : rawType;
+  const rawType = String(req.params.type || '').toLowerCase().trim();
+  const type = normalizeMediaType(rawType);
   if (!['movie', 'tv'].includes(type)) {
     throw ApiError.badRequest('Invalid title type');
   }

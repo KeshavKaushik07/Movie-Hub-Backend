@@ -58,6 +58,119 @@ Object.values(OTT_PROVIDERS).forEach((p) => {
   p.ids.forEach((id) => PROVIDER_ID_TO_KEY.set(id, p.key));
 });
 
+const GENRE_SLUG_TO_ID = {
+  action: 28,
+  adventure: 12,
+  animation: 16,
+  comedy: 35,
+  crime: 80,
+  documentary: 99,
+  drama: 18,
+  family: 10751,
+  fantasy: 14,
+  history: 36,
+  horror: 27,
+  music: 10402,
+  mystery: 9648,
+  romance: 10749,
+  'sci-fi': 878,
+  scifi: 878,
+  'science-fiction': 878,
+  thriller: 53,
+  war: 10752,
+  western: 37,
+  'action-adventure': 10759,
+  'action-and-adventure': 10759,
+  'sci-fi-fantasy': 10765,
+  'sci-fi-and-fantasy': 10765,
+  reality: 10764,
+  kids: 10762,
+  soap: 10766,
+  talk: 10767,
+  'war-politics': 10768,
+};
+
+export const resolveBackendGenreIds = (genreParam, mediaType = 'movie') => {
+  const tokens = toList(genreParam);
+  const ids = [];
+  for (const tok of tokens) {
+    const num = Number(tok);
+    if (Number.isInteger(num) && num > 0) {
+      ids.push(num);
+      continue;
+    }
+    const slug = String(tok)
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    if (mediaType === 'tv') {
+      if (slug === 'action' || slug === 'adventure') {
+        ids.push(10759, 28, 12);
+        continue;
+      }
+      if (slug === 'sci-fi' || slug === 'scifi' || slug === 'fantasy') {
+        ids.push(10765, 878, 14);
+        continue;
+      }
+    }
+    if (GENRE_SLUG_TO_ID[slug]) {
+      ids.push(GENRE_SLUG_TO_ID[slug]);
+    } else {
+      for (const [gId, gName] of genreNames.entries()) {
+        const gSlug = String(gName)
+          .toLowerCase()
+          .replace(/&/g, 'and')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+        if (gSlug === slug) ids.push(gId);
+      }
+    }
+  }
+  return [...new Set(ids)];
+};
+
+const OTT_SLUG_ALIASES = {
+  netflix: 'netflix',
+  prime: 'prime',
+  'prime-video': 'prime',
+  'amazon-prime': 'prime',
+  'amazon-prime-video': 'prime',
+  hotstar: 'hotstar',
+  jiohotstar: 'hotstar',
+  'jio-hotstar': 'hotstar',
+  'disney-hotstar': 'hotstar',
+  'disney-plus-hotstar': 'hotstar',
+  jiocinema: 'jiocinema',
+  'jio-cinema': 'jiocinema',
+  sonyliv: 'sonyliv',
+  'sony-liv': 'sonyliv',
+  zee5: 'zee5',
+  'zee-5': 'zee5',
+  apple: 'apple',
+  'apple-tv': 'apple',
+  'apple-tv-plus': 'apple',
+  'apple-tv+': 'apple',
+  max: 'max',
+  'hbo-max': 'max',
+  'max-hbo': 'max',
+  hbo: 'max',
+  hulu: 'hulu',
+  crunchyroll: 'crunchyroll',
+  mxplayer: 'mxplayer',
+  'mx-player': 'mxplayer',
+};
+
+export const resolveBackendOttKey = (rawKey = '') => {
+  const clean = String(rawKey || '').toLowerCase().trim();
+  if (!clean) return '';
+  if (PROVIDER_ID_TO_KEY.has(Number(clean))) return PROVIDER_ID_TO_KEY.get(Number(clean));
+  if (OTT_SLUG_ALIASES[clean]) return OTT_SLUG_ALIASES[clean];
+  const slug = clean.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return OTT_SLUG_ALIASES[slug] || clean;
+};
+
+
 // Detect OTT network names for Web Series classification
 const WEB_SERIES_NETWORKS =
   /netflix|amazon|prime video|disney\+|hotstar|apple tv|hulu|hbo|max|jiocinema|sonyliv|zee5|mx player|altbalaji|tvf|voot|aha|hoichoi|crunchyroll|paramount\+|peacock/i;
@@ -1243,7 +1356,10 @@ export async function getOrFetchTitle(
   tmdbIdOrSlug,
   { details = false, forceRefresh = false, resetOverrides = false } = {},
 ) {
-  let normalizedType = type === 'webseries' ? 'tv' : type;
+  const rawTypeStr = String(type || 'movie').toLowerCase().trim();
+  let normalizedType = ['webseries', 'web-series', 'tv', 'tv-show', 'tv-shows', 'tv-series', 'series'].includes(rawTypeStr)
+    ? 'tv'
+    : 'movie';
   let numericId = Number(tmdbIdOrSlug);
   let doc = null;
 
@@ -1553,23 +1669,28 @@ export const shapeTitle = (rawDoc) => {
     slug: slugifyTitle(
       t.title || t.originalTitle || `${t.mediaType}-${t.tmdbId}`,
     ),
+    isUpcoming: Boolean(t.releaseDate && new Date(t.releaseDate).getTime() > Date.now()),
     budget: Number(t.budget) > 0 ? Number(t.budget) : 0,
     revenue:
-      Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
-        ? Number(t.boxOffice?.worldwideCollection || t.revenue)
-        : 0,
+      t.releaseDate && new Date(t.releaseDate).getTime() > Date.now() && !(t.lockedFields || []).includes('revenue')
+        ? 0
+        : Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
+          ? Number(t.boxOffice?.worldwideCollection || t.revenue)
+          : 0,
     financialEstimated: false,
     verdict:
-      Number(t.budget) > 0 &&
-      Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
-        ? t.boxOffice?.verdict ||
-          computeVerdict(
-            t.budget,
-            t.boxOffice?.worldwideCollection || t.revenue,
-          )
-        : t.boxOffice?.verdict && t.boxOffice.verdict !== 'TBA'
-          ? t.boxOffice.verdict
-          : '',
+      t.releaseDate && new Date(t.releaseDate).getTime() > Date.now() && !(t.lockedFields || []).includes('boxOffice')
+        ? ''
+        : Number(t.budget) > 0 &&
+          Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
+          ? t.boxOffice?.verdict ||
+            computeVerdict(
+              t.budget,
+              t.boxOffice?.worldwideCollection || t.revenue,
+            )
+          : t.boxOffice?.verdict && t.boxOffice.verdict !== 'TBA'
+            ? t.boxOffice.verdict
+            : '',
     ottProviders: t.ottProviders || [],
     regions: t.regions || [],
   };
@@ -1653,10 +1774,17 @@ export const shapeDetail = (rawDoc) => {
     };
   });
 
+  const isUnreleased = Boolean(
+    t.releaseDate &&
+      new Date(t.releaseDate).getTime() > Date.now() &&
+      !(t.lockedFields || []).includes('revenue') &&
+      !(t.lockedFields || []).includes('boxOffice'),
+  );
   const budget = Number(t.budget) > 0 ? Number(t.budget) : 0;
   const rawBoxOffice = toPlain(t.boxOffice);
-  const revenue =
-    Number(rawBoxOffice?.worldwideCollection || t.revenue) > 0
+  const revenue = isUnreleased
+    ? 0
+    : Number(rawBoxOffice?.worldwideCollection || t.revenue) > 0
       ? Number(rawBoxOffice?.worldwideCollection || t.revenue)
       : 0;
   const profit = revenue > 0 && budget > 0 ? revenue - budget : 0;
@@ -1679,10 +1807,11 @@ export const shapeDetail = (rawDoc) => {
     openingWeekend: rawBoxOffice?.openingWeekend || 0,
     openingDay: rawBoxOffice?.openingDay || 0,
     currency: rawBoxOffice?.currency || 'USD',
-    verdict:
-      budget > 0 && revenue > 0
+    verdict: isUnreleased
+      ? ''
+      : budget > 0 && revenue > 0
         ? computeVerdict(budget, revenue, rawBoxOffice?.verdict)
-        : rawBoxOffice?.verdict && rawBoxOffice.verdict !== 'TBA'
+        : rawBoxOffice?.verdict && rawBoxOffice.verdict !== 'TBA' && revenue > 0
           ? rawBoxOffice.verdict
           : '',
     profit,
@@ -1918,8 +2047,10 @@ export async function recalcSiteRating(type, tmdbId) {
 // ======================= Filters & Cache-Aside Discovery =======================
 export const buildFilter = (q, { personContext = null } = {}) => {
   const f = {};
+  const rawType = String(q.type || '').toLowerCase().trim();
   if (
-    q.type === 'webseries' ||
+    rawType === 'webseries' ||
+    rawType === 'web-series' ||
     q.subType === 'webseries' ||
     q.isWebSeries === 'true'
   ) {
@@ -1929,13 +2060,19 @@ export const buildFilter = (q, { personContext = null } = {}) => {
       { subType: 'webseries' },
       { ottProviders: { $exists: true, $ne: [] } },
     ];
-  } else if (['movie', 'tv'].includes(q.type)) {
-    f.mediaType = q.type;
+  } else if (['tv', 'tv-show', 'tv-shows', 'tv-series'].includes(rawType)) {
+    f.mediaType = 'tv';
+    if (!q.q) {
+      f.isWebSeries = { $ne: true };
+      f.subType = { $ne: 'webseries' };
+    }
+  } else if (['movie', 'movies'].includes(rawType)) {
+    f.mediaType = 'movie';
   }
 
-  // Support TMDB-style parameters (`with_genres`, `with_original_language`, `primary_release_year`, `first_air_date_year`, `with_watch_providers`)
+  // Support both numeric Genre IDs and human-readable Genre slugs (e.g. ?genre=thriller or ?genre=sci-fi)
   const genreParam = q.genre ?? q.with_genres ?? '';
-  const genres = toList(genreParam).map(Number).filter(Number.isInteger);
+  const genres = resolveBackendGenreIds(genreParam, f.mediaType || 'movie');
   if (genres.length)
     f.genreIds = q.genreMode === 'all' ? { $all: genres } : { $in: genres };
 
@@ -1964,13 +2101,11 @@ export const buildFilter = (q, { personContext = null } = {}) => {
   }
 
   if (q.ott || q.with_watch_providers) {
-    const ottList = toList(q.ott || q.with_watch_providers).map((x) =>
-      x.toLowerCase(),
-    );
-    const mappedKeys = ottList.map(
-      (k) => PROVIDER_ID_TO_KEY.get(Number(k)) || k,
-    );
-    f.ottProviders = { $in: mappedKeys };
+    const ottList = toList(q.ott || q.with_watch_providers);
+    const mappedKeys = ottList.map((k) => resolveBackendOttKey(k)).filter(Boolean);
+    if (mappedKeys.length) {
+      f.ottProviders = { $in: mappedKeys };
+    }
   }
 
   const rating = compact({
@@ -2080,12 +2215,12 @@ async function fetchFromTmdbAndStore(
   listName = null,
   { skipTitleSearch = false } = {},
 ) {
+  const qTypeNorm = String(query.type || '').toLowerCase().trim();
+  const isWebQuery = qTypeNorm === 'webseries' || qTypeNorm === 'web-series';
   const rawType =
-    query.type === 'webseries'
+    isWebQuery || ['tv', 'tv-show', 'tv-shows', 'tv-series'].includes(qTypeNorm)
       ? 'tv'
-      : ['movie', 'tv'].includes(query.type)
-        ? query.type
-        : 'movie';
+      : 'movie';
   const page = Math.max(1, toInt(query.page) || 1);
 
   try {
@@ -2117,6 +2252,31 @@ async function fetchFromTmdbAndStore(
 
     // 2. Named list fallback (trending, popular, top-rated, now-playing, upcoming)
     if (listName) {
+      if (listName === 'upcoming') {
+        const tomorrowIso = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+        const dateKey = rawType === 'tv' ? 'first_air_date.gte' : 'primary_release_date.gte';
+        const [upData, discFuture] = await Promise.all([
+          tmdbGet(rawType === 'tv' ? '/tv/on_the_air' : '/movie/upcoming', { page, language: 'en-US' }).catch(() => null),
+          tmdbGet(`/discover/${rawType}`, {
+            page,
+            sort_by: 'popularity.desc',
+            [dateKey]: tomorrowIso,
+            include_adult: false,
+            language: 'en-US',
+          }).catch(() => null),
+        ]);
+        const combinedResults = [...(discFuture?.results || []), ...(upData?.results || [])];
+        const futureOnly = combinedResults.filter((r) => {
+          const dStr = r?.release_date || r?.first_air_date;
+          if (!dStr) return false;
+          const ms = new Date(dStr).getTime();
+          return Number.isFinite(ms) && ms > Date.now();
+        });
+        if (futureOnly.length) {
+          await saveListings(futureOnly, rawType, { listTag: 'upcoming', isWebSeries: isWebQuery });
+        }
+        return;
+      }
       const mapCategory = {
         trending: `/trending/${rawType}/week`,
         popular: `/${rawType}/popular`,
@@ -2125,13 +2285,12 @@ async function fetchFromTmdbAndStore(
         'now-playing':
           rawType === 'tv' ? '/tv/on_the_air' : '/movie/now_playing',
         now_playing: rawType === 'tv' ? '/tv/on_the_air' : '/movie/now_playing',
-        upcoming: rawType === 'tv' ? '/tv/airing_today' : '/movie/upcoming',
       };
       const endpoint = mapCategory[listName];
       if (endpoint) {
         const data = await tmdbGet(endpoint, { page, language: 'en-US' });
         if (data?.results?.length) {
-          await saveListings(data.results, rawType, { listTag: listName });
+          await saveListings(data.results, rawType, { listTag: listName, isWebSeries: isWebQuery });
         }
         return;
       }
@@ -2145,7 +2304,10 @@ async function fetchFromTmdbAndStore(
       language: 'en-US',
     };
     const genreParam = query.genre ?? query.with_genres;
-    if (genreParam) params.with_genres = String(genreParam);
+    if (genreParam) {
+      const resolvedIds = resolveBackendGenreIds(genreParam, rawType);
+      params.with_genres = resolvedIds.length ? resolvedIds.join('|') : String(genreParam);
+    }
 
     const year = toInt(
       query.year ?? query.primary_release_year ?? query.first_air_date_year,
@@ -2166,7 +2328,7 @@ async function fetchFromTmdbAndStore(
       params.with_original_language = String(lang).split(',')[0];
     }
 
-    const ottKey = query.ott ? String(query.ott).toLowerCase() : null;
+    const ottKey = query.ott ? resolveBackendOttKey(query.ott) : null;
     if (ottKey && OTT_PROVIDERS[ottKey]) {
       params.with_watch_providers = OTT_PROVIDERS[ottKey].ids.join('|');
       params.watch_region = OTT_PROVIDERS[ottKey].region || 'IN';
@@ -2315,10 +2477,24 @@ export async function findTitles(
     }
   }
 
+  const effectiveListKey = String(listName || query.list || '')
+    .toLowerCase()
+    .replace('_', '-')
+    .trim();
+  const listSpec =
+    effectiveListKey && LISTS[effectiveListKey]
+      ? LISTS[effectiveListKey]()
+      : null;
+  const effectiveExtra =
+    extra && Object.keys(extra).length > 0
+      ? extra
+      : listSpec?.extra || {};
+  const effectiveSort = sort || listSpec?.sort;
+
   const runMongoQuery = async (ctx = personContext) => {
     const base = buildFilter(query, { personContext: ctx });
     let order =
-      sort || SORTS[query.sort] || SORTS[query.sort_by] || SORTS.popularity;
+      effectiveSort || SORTS[query.sort] || SORTS[query.sort_by] || SORTS.popularity;
     if (
       ['newest', 'oldest', 'release_date.desc'].includes(
         query.sort || query.sort_by,
@@ -2331,7 +2507,7 @@ export async function findTitles(
         Object.keys(order).map((k) => [k, query.order === 'asc' ? 1 : -1]),
       );
     }
-    const filter = { $and: [{ adult: { $ne: true } }, base, extra] };
+    const filter = { $and: [{ adult: { $ne: true } }, base, effectiveExtra] };
     const [docs, total] = await Promise.all([
       Title.find(filter)
         .select(LIST_FIELDS)
@@ -2356,7 +2532,7 @@ export async function findTitles(
     (docs.length === 0 || (query.q && page === 1 && docs.length < 5));
 
   if (needsFallback) {
-    await fetchFromTmdbAndStore(query, listName);
+    await fetchFromTmdbAndStore(query, effectiveListKey || listName);
     const retry = await runMongoQuery(personContext);
     docs = retry.docs;
     total = retry.total;
@@ -2423,9 +2599,9 @@ export const LISTS = {
   }),
   upcoming: () => ({
     extra: {
-      $or: [{ listTags: 'upcoming' }, { releaseDate: { $gt: new Date() } }],
+      releaseDate: { $gt: new Date() },
     },
-    sort: { releaseDate: 1 },
+    sort: { popularity: -1, releaseDate: 1 },
   }),
   'community-top': () => ({
     extra: { siteReviewCount: { $gte: 1 } },

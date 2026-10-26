@@ -12,7 +12,10 @@ import {
   shapeTitle,
   syncPersonCreditsToMongo,
 } from '../services/title.service.js';
-import { getActiveFeaturedHero } from './featured.controller.js';
+import {
+  getActiveFeaturedHero,
+  getHeroSlideLimit,
+} from './featured.controller.js';
 
 const imgUrl = (p, size = 'w500') => {
   if (!p) return null;
@@ -209,8 +212,10 @@ export const lists = asyncHandler(async (req, res) => {
   } else if (normalized === 'box-office') {
     query.sort = 'revenue';
     query.type = 'movie';
-  } else if (normalized === 'webseries') {
+  } else if (normalized === 'webseries' || normalized === 'web-series') {
     query.type = 'webseries';
+  } else if (normalized === 'tv-shows' || normalized === 'tv-show') {
+    query.type = 'tv';
   } else if (LISTS[normalized]) {
     const { extra, sort } = LISTS[normalized]();
     const data = await findTitles(query, { extra, sort, listName: normalized });
@@ -339,7 +344,10 @@ export const celebrities = asyncHandler(async (req, res) => {
 
 // GET /discover/person?name=...&id=... -> Full Actor / Director Filmography
 export const personDetails = asyncHandler(async (req, res) => {
-  const rawName = String(req.query.name || req.params.name || '').replace(/-+/g, ' ').replace(/\s+/g, ' ').trim();
+  const rawName = String(req.query.name || req.params.name || '')
+    .replace(/-+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const rawId = Number(req.query.id);
 
   if (!rawName && !Number.isInteger(rawId)) {
@@ -445,6 +453,23 @@ export const personDetails = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Interleaves items across multiple cinema industry arrays (1 from each industry round-robin)
+ * so the Hero Carousel represents EVERY cinema industry, not just Hollywood or Bollywood.
+ */
+const interleaveIndustryPools = (pools = []) => {
+  const result = [];
+  const maxLen = Math.max(0, ...pools.map((p) => (Array.isArray(p) ? p.length : 0)));
+  for (let i = 0; i < maxLen; i += 1) {
+    for (const pool of pools) {
+      if (Array.isArray(pool) && pool[i]) {
+        result.push(pool[i]);
+      }
+    }
+  }
+  return result;
+};
+
 // GET /discover/home?region=IN|GLOBAL&industries=...&genres=...
 export const homeFeed = asyncHandler(async (req, res) => {
   const isIndia = String(req.query.region || 'IN').toUpperCase() !== 'GLOBAL';
@@ -457,8 +482,11 @@ export const homeFeed = asyncHandler(async (req, res) => {
     .map(Number)
     .filter(Number.isFinite);
 
+  const upcomingListSpec = LISTS.upcoming();
+
   const [
     superAdminFeaturedHero,
+    heroLimit,
     upcomingMovies,
     trendingMovies,
     trendingTv,
@@ -468,8 +496,11 @@ export const homeFeed = asyncHandler(async (req, res) => {
     bollywood,
     tollywood,
     kollywood,
+    mollywood,
+    sandalwood,
     hollywood,
     korean,
+    japanese,
     netflixShows,
     primeShows,
     communityTop,
@@ -477,9 +508,10 @@ export const homeFeed = asyncHandler(async (req, res) => {
     regionalCelebs,
   ] = await Promise.all([
     getActiveFeaturedHero(),
+    getHeroSlideLimit(),
     findTitles(
       { type: 'movie', list: 'upcoming', limit: 24 },
-      { listName: 'upcoming' },
+      { ...upcomingListSpec, listName: 'upcoming' },
     ),
     findTitles(
       { type: 'movie', list: 'trending', limit: 45 },
@@ -501,8 +533,11 @@ export const homeFeed = asyncHandler(async (req, res) => {
     findTitles({ type: 'movie', industry: 'bollywood', limit: 40 }),
     findTitles({ type: 'movie', industry: 'tollywood', limit: 40 }),
     findTitles({ type: 'movie', industry: 'kollywood', limit: 40 }),
+    findTitles({ type: 'movie', industry: 'mollywood', limit: 24 }),
+    findTitles({ type: 'movie', industry: 'sandalwood', limit: 24 }),
     findTitles({ type: 'movie', industry: 'hollywood', limit: 45 }),
     findTitles({ industry: 'korean', limit: 36 }),
+    findTitles({ industry: 'japanese', limit: 24 }),
     findTitles({ ott: 'netflix', limit: 45 }),
     findTitles({ ott: 'prime', limit: 45 }),
     Title.find({ siteReviewCount: { $gt: 0 } })
@@ -530,28 +565,81 @@ export const homeFeed = asyncHandler(async (req, res) => {
     personalizedItems = pDocs.map(shapeTitle);
   }
 
-  // Hero Carousel: Strictly SuperAdmin's Featured collection when active items exist; otherwise regional + trending fallback
-  const fallbackHero = (
+  // Requirement 3: Home Hero Carousel
+  // - Default target count is 10 (or Admin's configured `heroLimit`, or `superAdminFeaturedHero.length` if Admin added > heroLimit slides)
+  // - If Admin selected N slides (e.g. 2 movies), show those 2 Admin slides FIRST + (targetCount - 2) Trending slides from EVERY industry!
+  // - If Admin selected 0 slides, show `targetCount` (10) Trending slides interleaved across EVERY industry!
+  const targetHeroCount = Math.max(
+    Number(heroLimit) || 10,
+    superAdminFeaturedHero.length,
+  );
+
+  const multiIndustryTrendingPool = interleaveIndustryPools(
     isIndia
       ? [
-          ...bollywood.items.slice(0, 3),
-          ...tollywood.items.slice(0, 2),
-          ...trendingMovies.items.slice(0, 3),
-          ...webSeries.items.slice(0, 2),
+          bollywood.items,
+          tollywood.items,
+          kollywood.items,
+          webSeries.items,
+          mollywood.items,
+          sandalwood.items,
+          hollywood.items,
+          korean.items,
+          japanese.items,
+          trendingMovies.items,
+          trendingTv.items,
         ]
       : [
-          ...trendingMovies.items.slice(0, 5),
-          ...hollywood.items.slice(0, 3),
-          ...webSeries.items.slice(0, 2),
-        ]
-  ).filter((x) => x.backdropUrl || x.posterUrl);
+          hollywood.items,
+          trendingMovies.items,
+          webSeries.items,
+          korean.items,
+          bollywood.items,
+          tollywood.items,
+          japanese.items,
+          kollywood.items,
+          mollywood.items,
+          sandalwood.items,
+          trendingTv.items,
+        ],
+  ).filter((x) => x && (x.backdropUrl || x.posterUrl));
 
-  const hero =
-    superAdminFeaturedHero.length > 0 ? superAdminFeaturedHero : fallbackHero;
+  const hero = [];
+  const heroSeen = new Set();
+
+  const addSlideToHero = (item) => {
+    if (!item?.id) return false;
+    const idKey = `${item.type || 'movie'}:${item.id}`;
+    const titleKey = String(item.title || item.name || '')
+      .toLowerCase()
+      .trim();
+    if (heroSeen.has(idKey) || (titleKey && heroSeen.has(titleKey))) return false;
+    heroSeen.add(idKey);
+    if (titleKey) heroSeen.add(titleKey);
+    hero.push(item);
+    return true;
+  };
+
+  // 1. Add all active Admin-selected Featured slides first
+  for (const featItem of superAdminFeaturedHero) {
+    addSlideToHero({ ...featItem, isFeaturedSlide: true });
+    if (hero.length >= targetHeroCount) break;
+  }
+
+  // 2. Fill remaining slots up to `targetHeroCount` (e.g. 2 Admin + 8 Multi-Industry Trending = 10)
+  if (hero.length < targetHeroCount) {
+    for (const trendItem of multiIndustryTrendingPool) {
+      addSlideToHero({ ...trendItem, isFeaturedSlide: false });
+      if (hero.length >= targetHeroCount) break;
+    }
+  }
+
   const heroSource =
-    superAdminFeaturedHero.length > 0
+    superAdminFeaturedHero.length >= targetHeroCount
       ? 'superadmin_featured'
-      : 'trending_fallback';
+      : superAdminFeaturedHero.length > 0
+        ? 'blended_featured_and_trending'
+        : 'trending_fallback';
 
   // Build Top 10 Today & Top 10 This Week (prioritizing regional hits for Indian users vs global for international)
   const poolToday = isIndia
@@ -596,7 +684,7 @@ export const homeFeed = asyncHandler(async (req, res) => {
     }
   }
 
-  // Regional-aware row ordering with explicit `seeAllTo` links for every single carousel
+  // Regional-aware row ordering with explicit plural & slugged `seeAllTo` links for every single carousel
   const rows = isIndia
     ? [
         ...(personalizedItems.length
@@ -605,7 +693,7 @@ export const homeFeed = asyncHandler(async (req, res) => {
                 key: 'for-you',
                 title: 'Picked For Your Taste',
                 subtitle: 'Based on your saved cinema & genre preferences',
-                seeAllTo: `/browse/movie?industry=${prefIndustries[0] || 'bollywood'}`,
+                seeAllTo: `/browse/movies?industry=${prefIndustries[0] || 'bollywood'}`,
                 items: personalizedItems,
               },
             ]
@@ -614,64 +702,64 @@ export const homeFeed = asyncHandler(async (req, res) => {
           key: 'bollywood',
           title: 'Bollywood Blockbusters (Hindi)',
           subtitle: 'Biggest Hindi theatrical releases & crowd favorites',
-          seeAllTo: '/browse/movie?industry=bollywood',
+          seeAllTo: '/browse/movies?industry=bollywood',
           items: bollywood.items,
         },
         {
           key: 'web-series',
           title: 'Trending Web Series & OTT Originals',
           subtitle:
-            'Binge-worthy originals on Netflix, Prime Video, Hotstar & JioCinema',
-          seeAllTo: '/browse/webseries',
+            'Binge-worthy originals on Netflix, Prime Video, JioHotstar & JioCinema',
+          seeAllTo: '/browse/web-series',
           items: webSeries.items,
         },
         {
           key: 'tollywood',
           title: 'South Indian Powerhouse (Tollywood & Pan-India)',
           subtitle: 'Action spectacles and critically acclaimed Telugu cinema',
-          seeAllTo: '/browse/movie?industry=tollywood',
+          seeAllTo: '/browse/movies?industry=tollywood',
           items: tollywood.items,
         },
         {
           key: 'kollywood',
           title: 'Kollywood & Tamil Spotlight',
           subtitle: 'Top-rated Tamil thrillers and mass entertainers',
-          seeAllTo: '/browse/movie?industry=kollywood',
+          seeAllTo: '/browse/movies?industry=kollywood',
           items: kollywood.items,
         },
         {
           key: 'netflix',
           title: 'Streaming Now on Netflix',
           subtitle: 'Top movies and series trending on Netflix',
-          seeAllTo: '/browse/movie?ott=netflix',
+          seeAllTo: '/ott/netflix',
           items: netflixShows.items,
         },
         {
           key: 'prime',
           title: 'Prime Video Originals & Hits',
           subtitle: 'Popular titles streaming on Amazon Prime Video',
-          seeAllTo: '/browse/movie?ott=prime',
+          seeAllTo: '/ott/prime-video',
           items: primeShows.items,
         },
         {
           key: 'trending-movies',
           title: 'Global Trending Movies',
           subtitle: 'Worldwide box office & streaming sensations',
-          seeAllTo: '/browse/movie?list=trending',
+          seeAllTo: '/browse/movies?list=trending',
           items: trendingMovies.items,
         },
         {
           key: 'hollywood',
           title: 'Hollywood Blockbusters',
           subtitle: 'IMAX spectacles, sci-fi epics & Oscar contenders',
-          seeAllTo: '/browse/movie?industry=hollywood',
+          seeAllTo: '/browse/movies?industry=hollywood',
           items: hollywood.items,
         },
         {
           key: 'top-rated',
           title: 'All-Time Highest Rated',
           subtitle: 'Critically acclaimed masterpieces across decades',
-          seeAllTo: '/browse/movie?list=top-rated',
+          seeAllTo: '/browse/movies?list=top-rated',
           items: topRated.items,
         },
         ...(communityTop.length
@@ -680,7 +768,7 @@ export const homeFeed = asyncHandler(async (req, res) => {
                 key: 'community-top',
                 title: 'Movies Hub Community Top Rated',
                 subtitle: 'Highest rated by verified Movies Hub members',
-                seeAllTo: '/browse/movie?list=community-top',
+                seeAllTo: '/browse/movies?list=community-top',
                 items: communityTop.map(shapeTitle),
               },
             ]
@@ -693,7 +781,7 @@ export const homeFeed = asyncHandler(async (req, res) => {
                 key: 'for-you',
                 title: 'Picked For Your Taste',
                 subtitle: 'Based on your saved cinema & genre preferences',
-                seeAllTo: `/browse/movie?industry=${prefIndustries[0] || 'hollywood'}`,
+                seeAllTo: `/browse/movies?industry=${prefIndustries[0] || 'hollywood'}`,
                 items: personalizedItems,
               },
             ]
@@ -702,56 +790,56 @@ export const homeFeed = asyncHandler(async (req, res) => {
           key: 'trending-movies',
           title: 'Trending Movies Worldwide',
           subtitle: 'Most watched movies around the globe this week',
-          seeAllTo: '/browse/movie?list=trending',
+          seeAllTo: '/browse/movies?list=trending',
           items: trendingMovies.items,
         },
         {
           key: 'hollywood',
           title: 'Hollywood Blockbusters',
           subtitle: 'Studio tentpoles, thrillers & theatrical hits',
-          seeAllTo: '/browse/movie?industry=hollywood',
+          seeAllTo: '/browse/movies?industry=hollywood',
           items: hollywood.items,
         },
         {
           key: 'web-series',
           title: 'Popular Streaming Originals & Web Series',
           subtitle: 'Must-watch series across Netflix, Max, Apple TV+ & Prime',
-          seeAllTo: '/browse/webseries',
+          seeAllTo: '/browse/web-series',
           items: webSeries.items,
         },
         {
           key: 'trending-tv',
           title: 'Trending TV Shows',
           subtitle: 'Acclaimed drama, sci-fi, and crime television',
-          seeAllTo: '/browse/tv?list=trending',
+          seeAllTo: '/browse/tv-shows?list=trending',
           items: trendingTv.items,
         },
         {
           key: 'netflix',
           title: 'Streaming on Netflix',
           subtitle: 'Top movies and series on Netflix',
-          seeAllTo: '/browse/movie?ott=netflix',
+          seeAllTo: '/ott/netflix',
           items: netflixShows.items,
         },
         {
           key: 'korean',
           title: 'Korean Cinema & K-Drama Spotlight',
           subtitle: 'Award-winning Korean thrillers and series',
-          seeAllTo: '/browse/movie?industry=korean',
+          seeAllTo: '/browse/movies?industry=korean',
           items: korean.items,
         },
         {
           key: 'bollywood',
           title: 'Indian Cinema Spotlight (Bollywood & RRR-Era Hits)',
           subtitle: 'Global Indian crossover blockbusters',
-          seeAllTo: '/browse/movie?industry=bollywood',
+          seeAllTo: '/browse/movies?industry=bollywood',
           items: bollywood.items,
         },
         {
           key: 'top-rated',
           title: 'All-Time Top Rated',
           subtitle: 'Highest-rated cinema classics',
-          seeAllTo: '/browse/movie?list=top-rated',
+          seeAllTo: '/browse/movies?list=top-rated',
           items: topRated.items,
         },
         ...(communityTop.length
@@ -760,7 +848,7 @@ export const homeFeed = asyncHandler(async (req, res) => {
                 key: 'community-top',
                 title: 'Movies Hub Community Top Rated',
                 subtitle: 'Highest rated by verified Movies Hub members',
-                seeAllTo: '/browse/movie?list=community-top',
+                seeAllTo: '/browse/movies?list=community-top',
                 items: communityTop.map(shapeTitle),
               },
             ]
@@ -798,10 +886,21 @@ export const homeFeed = asyncHandler(async (req, res) => {
     }
   }
 
+  // Strictly ensure Upcoming items only include titles with a future release date (> today)
+  const nowMs = Date.now();
+  const strictlyUpcomingItems = (upcomingMovies.items || []).filter((item) => {
+    const rawDate = item?.releaseDate || item?.release_date || item?.first_air_date;
+    if (!rawDate) return false;
+    const dMs = new Date(rawDate).getTime();
+    return Number.isFinite(dMs) && dMs > nowMs;
+  });
+
   res.json({
     success: true,
     region: isIndia ? 'IN' : 'GLOBAL',
     currency: isIndia ? 'INR' : 'USD',
+    heroLimit: targetHeroCount,
+    adminFeaturedCount: superAdminFeaturedHero.length,
     heroSource,
     hero,
     upcoming: {
@@ -809,8 +908,8 @@ export const homeFeed = asyncHandler(async (req, res) => {
       subtitle: isIndia
         ? 'Most anticipated Indian & global releases coming soon'
         : 'Upcoming theatrical & streaming releases',
-      seeAllTo: '/browse/movie?list=upcoming',
-      items: upcomingMovies.items,
+      seeAllTo: '/browse/movies?list=upcoming',
+      items: strictlyUpcomingItems,
     },
     top10Today,
     top10Week,

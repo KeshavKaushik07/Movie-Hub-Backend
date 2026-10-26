@@ -18,15 +18,15 @@ router.get('/industry/:name', c.byIndustry);
 router.get('/ott/:providerKey', c.byOtt);
 router.get('/lists/:name', c.lists);
 
-router.get('/movie', (req, res, next) => {
+router.get(['/movie', '/movies'], (req, res, next) => {
   req.query.type = 'movie';
   return c.browse(req, res, next);
 });
-router.get('/tv', (req, res, next) => {
+router.get(['/tv', '/tv-show', '/tv-shows', '/tv-series'], (req, res, next) => {
   req.query.type = 'tv';
   return c.browse(req, res, next);
 });
-router.get('/webseries', (req, res, next) => {
+router.get(['/webseries', '/web-series'], (req, res, next) => {
   req.query.type = 'webseries';
   return c.browse(req, res, next);
 });

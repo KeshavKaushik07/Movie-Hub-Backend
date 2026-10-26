@@ -18,6 +18,7 @@ import {
 } from '../controller/superadmin.controller.js';
 import {
   listAdminFeatured,
+  updateHeroConfig,
   addFeaturedItem,
   updateFeaturedItem,
   reorderFeaturedItems,
@@ -39,8 +40,9 @@ r.patch('/titles/:type/:tmdbId', updateTitleDetails);
 r.post('/titles/:type/:tmdbId/sync', syncTitleFromTmdb);
 r.delete('/titles/:type/:tmdbId', deleteTitleFromDb);
 
-// Home Hero Featured Carousel Management (SuperAdmin Exclusive)
+// Home Hero Featured Carousel Management
 r.get('/featured', listAdminFeatured);
+r.patch('/featured/config', updateHeroConfig);
 r.post('/featured', addFeaturedItem);
 r.put('/featured/reorder', reorderFeaturedItems);
 r.patch('/featured/:id', updateFeaturedItem);

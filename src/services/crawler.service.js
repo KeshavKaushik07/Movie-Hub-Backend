@@ -160,6 +160,12 @@ async function crawlPopularAndTrending(restart = false, { ignoreQuotaCap = false
     await CrawlJob.updateOne({ name: 'popular_trending' }, { status: 'running', targetCap: quotas.total, lastError: null });
   }
 
+  // Always strip "upcoming" tag from any title that has already been released
+  await Title.updateMany(
+    { listTags: "upcoming", releaseDate: { $lte: new Date() }, lockedFields: { $ne: "listTags" } },
+    { $pull: { listTags: "upcoming" } },
+  ).catch(() => {});
+
   if (restart || ignoreQuotaCap) {
     await Title.updateMany(
       {
@@ -198,10 +204,24 @@ async function crawlPopularAndTrending(restart = false, { ignoreQuotaCap = false
       if (!ignoreQuotaCap && !(await hasCategoryRoom(ep.category))) break;
       const data = await fetchPage(ep.path, { page, language: 'en-US' });
       if (!data?.results?.length) break;
-      savedInStep += await saveAndTag(data.results, ep.type, {
-        listTag: ep.listTag,
-        isWebSeries: !!ep.isWebSeries,
-      });
+      if (ep.listTag === "upcoming") {
+        const nowMs = Date.now();
+        const futureResults = data.results.filter((r) => {
+          const dStr = r.release_date || r.first_air_date;
+          return dStr && new Date(dStr).getTime() > nowMs;
+        });
+        if (futureResults.length) {
+          savedInStep += await saveAndTag(futureResults, ep.type, {
+            listTag: "upcoming",
+            isWebSeries: !!ep.isWebSeries,
+          });
+        }
+      } else {
+        savedInStep += await saveAndTag(data.results, ep.type, {
+          listTag: ep.listTag,
+          isWebSeries: !!ep.isWebSeries,
+        });
+      }
       if (page >= (data.total_pages || 1)) break;
     }
     await CrawlJob.updateOne(
