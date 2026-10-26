@@ -51,10 +51,10 @@ export const getStats = asyncHandler(async (_req, res) => {
     Review.countDocuments({ reviewType: 'critic' }),
     Comment.countDocuments(),
     Watchlist.countDocuments(),
-    Featured.countDocuments({ isActive: true }),
-    Blog.countDocuments({ status: 'published' }),
+    Featured.countDocuments(),
+    Blog.countDocuments(),
     BlogComment.countDocuments({ isHidden: { $ne: true } }),
-    CommunityRoom.countDocuments({ isActive: true }),
+    CommunityRoom.countDocuments({ roomType: { $in: ['public', 'movie'] }, isActive: true }),
     CommunityMessage.countDocuments({ isHidden: { $ne: true } }),
     User.find().sort('-createdAt').limit(8),
     Title.find({ siteReviewCount: { $gt: 0 } })

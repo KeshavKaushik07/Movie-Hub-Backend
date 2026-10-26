@@ -117,7 +117,9 @@ export const similarTitles = asyncHandler(async (req, res) => {
 // GET /titles/tv/:tmdbId/season/:seasonNumber
 export const getSeason = asyncHandler(async (req, res) => {
   const rawId = req.params.tmdbId;
-  const seasonNumber = Number(req.params.seasonNumber);
-  const season = await getOrFetchSeason(rawId, seasonNumber);
-  res.json({ season });
+  const rawSeason = req.params.seasonNumber;
+  const parsed = Number(rawSeason);
+  const safeSeasonNum = Number.isInteger(parsed) && parsed >= 0 ? parsed : 1;
+  const season = await getOrFetchSeason(rawId, safeSeasonNum);
+  res.json({ success: true, season, ...season });
 });

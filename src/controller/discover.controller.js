@@ -283,6 +283,7 @@ const buildRegionalCelebrities = async (region = 'IN') => {
         _id: '$cast.name',
         tmdbId: { $first: '$cast.id' },
         profilePath: { $first: '$cast.profilePath' },
+        gender: { $first: '$cast.gender' },
         count: { $sum: 1 },
         sampleTitles: { $addToSet: '$title' },
       },
@@ -296,6 +297,7 @@ const buildRegionalCelebrities = async (region = 'IN') => {
     map.set(item._id.toLowerCase(), {
       id: item.tmdbId || null,
       name: item._id,
+      gender: item.gender || 0,
       department: 'Acting',
       industry: isIndia ? 'Indian Cinema' : 'Global Cinema',
       knownFor: (item.sampleTitles || []).slice(0, 3).join(' • '),
@@ -337,7 +339,7 @@ export const celebrities = asyncHandler(async (req, res) => {
 
 // GET /discover/person?name=...&id=... -> Full Actor / Director Filmography
 export const personDetails = asyncHandler(async (req, res) => {
-  const rawName = String(req.query.name || req.params.name || '').trim();
+  const rawName = String(req.query.name || req.params.name || '').replace(/-+/g, ' ').replace(/\s+/g, ' ').trim();
   const rawId = Number(req.query.id);
 
   if (!rawName && !Number.isInteger(rawId)) {
@@ -349,6 +351,7 @@ export const personDetails = asyncHandler(async (req, res) => {
     name: rawName || 'Artist',
     profileUrl: null,
     knownForDepartment: 'Acting',
+    gender: 0,
     biography: '',
     birthday: null,
     placeOfBirth: '',

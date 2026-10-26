@@ -454,6 +454,7 @@ export const fromDetails = (
         character: c.character || '',
         profilePath: c.profile_path || c.profilePath || null,
         order: c.order ?? idx,
+        gender: c.gender || 0,
       });
     } else {
       const prev = castMap.get(key);
@@ -484,6 +485,7 @@ export const fromDetails = (
           character: c.character || '',
           profilePath: c.profilePath || c.profile_path || null,
           order: c.order ?? 60 + idx,
+          gender: c.gender || 0,
         });
       }
     });
@@ -524,6 +526,7 @@ export const fromDetails = (
         job: c.job || 'Crew',
         department: c.department || 'Production',
         profilePath: c.profile_path || c.profilePath || null,
+        gender: c.gender || 0,
       });
     }
   });
@@ -539,6 +542,7 @@ export const fromDetails = (
           job: c.job || 'Crew',
           department: c.department || 'Production',
           profilePath: c.profilePath || c.profile_path || null,
+          gender: c.gender || 0,
         });
       }
     });
@@ -652,17 +656,44 @@ export const fromDetails = (
     budget,
     revenue: boxOffice.worldwideCollection || revenue,
     boxOffice,
-    numberOfSeasons: d.number_of_seasons,
+    numberOfSeasons: d.number_of_seasons || (d.seasons || []).filter((s) => Number(s.season_number) > 0).length || (d.seasons || []).length || undefined,
     numberOfEpisodes: d.number_of_episodes,
-    seasons: (d.seasons || []).map((s) => ({
-      seasonNumber: s.season_number,
-      name: s.name,
-      episodeCount: s.episode_count,
-      airDate: s.air_date,
-      posterPath: s.poster_path,
-      overview: s.overview,
-      voteAverage: s.vote_average,
+    seasons: (d.seasons || []).map((s, idx) => ({
+      seasonNumber: s.season_number ?? s.seasonNumber ?? idx + 1,
+      name: s.name || `Season ${s.season_number ?? idx + 1}`,
+      episodeCount: s.episode_count ?? s.episodeCount ?? 0,
+      airDate: s.air_date || s.airDate || "",
+      posterPath: s.poster_path || s.posterPath || "",
+      overview: s.overview || "",
+      voteAverage: s.vote_average ?? s.voteAverage ?? 0,
     })),
+    ...(d["season/1"] && Array.isArray(d["season/1"].episodes) && d["season/1"].episodes.length > 0
+      ? {
+          seasonsDetails: [
+            ...(Array.isArray(baseDoc?.seasonsDetails)
+              ? baseDoc.seasonsDetails
+                  .map((sd) => (typeof sd?.toObject === "function" ? sd.toObject() : sd?._doc || sd))
+                  .filter((sd) => Number(sd?.seasonNumber) !== 1)
+              : []),
+            {
+              seasonNumber: d["season/1"].season_number ?? 1,
+              name: d["season/1"].name || "Season 1",
+              overview: d["season/1"].overview || "",
+              airDate: d["season/1"].air_date || "",
+              posterPath: d["season/1"].poster_path || "",
+              episodes: d["season/1"].episodes.map((ep, idx) => ({
+                episodeNumber: ep.episode_number ?? idx + 1,
+                name: ep.name || `Episode ${ep.episode_number ?? idx + 1}`,
+                overview: ep.overview || "",
+                airDate: ep.air_date || "",
+                runtime: ep.runtime || null,
+                stillPath: ep.still_path || "",
+                voteAverage: ep.vote_average || 0,
+              })),
+            },
+          ],
+        }
+      : {}),
     trailerKey: resetOverrides ? trailerKey || '' : trailerKey,
     videos,
     songs,
@@ -785,6 +816,7 @@ export async function syncPersonCreditsToMongo({
     profilePath: null,
     profileUrl: null,
     knownForDepartment: 'Acting',
+    gender: 0,
     biography: '',
     birthday: null,
     placeOfBirth: '',
@@ -839,6 +871,7 @@ export async function syncPersonCreditsToMongo({
       personMeta.id = best.id;
       personMeta.name = best.name || personMeta.name;
       personMeta.knownForDepartment = best.known_for_department || 'Acting';
+      if (best.gender) personMeta.gender = best.gender;
       personMeta.popularity = Number(best.popularity) || 0;
       if (best.profile_path) {
         personMeta.profilePath = best.profile_path;
@@ -860,6 +893,7 @@ export async function syncPersonCreditsToMongo({
     personMeta.biography = pData.biography || '';
     personMeta.birthday = pData.birthday || null;
     personMeta.placeOfBirth = pData.place_of_birth || '';
+    if (pData.gender) personMeta.gender = pData.gender;
     personMeta.popularity =
       Number(pData.popularity) || personMeta.popularity || 0;
     if (pData.profile_path) {
@@ -1025,6 +1059,7 @@ export async function syncPersonCreditsToMongo({
             character: entry.character || '',
             profilePath: personMeta.profilePath || null,
             order: entry.order ?? currentCast.length,
+            gender: personMeta.gender || 0,
           });
           setFields.cast = currentCast;
         } else {
@@ -1043,6 +1078,7 @@ export async function syncPersonCreditsToMongo({
                 existingCastMember.profilePath ||
                 personMeta.profilePath ||
                 null,
+              gender: existingCastMember.gender || personMeta.gender || 0,
             };
             setFields.cast = currentCast;
           }
@@ -1068,6 +1104,7 @@ export async function syncPersonCreditsToMongo({
               job: cj.job,
               department: cj.department || 'Production',
               profilePath: personMeta.profilePath || null,
+              gender: personMeta.gender || 0,
             });
             crewChanged = true;
           }
@@ -1225,9 +1262,15 @@ export async function getOrFetchTitle(
     doc = await Title.findOne({ mediaType: normalizedType, tmdbId: numericId });
   }
 
+  const needsSeasonEnrichment =
+    details &&
+    normalizedType === 'tv' &&
+    !doc?.isCustom &&
+    (!Array.isArray(doc?.seasons) || doc.seasons.length === 0);
+
   if (
     doc &&
-    (!details || doc.detailsFetched || doc.isCustom) &&
+    (!details || (doc.detailsFetched && !needsSeasonEnrichment) || doc.isCustom) &&
     !forceRefresh
   ) {
     return doc;
@@ -1236,7 +1279,7 @@ export async function getOrFetchTitle(
   try {
     const appendFields =
       normalizedType === 'tv'
-        ? 'credits,aggregate_credits,videos,images,watch/providers,reviews,similar,recommendations,release_dates,content_ratings,keywords,external_ids'
+        ? 'credits,aggregate_credits,videos,images,watch/providers,reviews,similar,recommendations,release_dates,content_ratings,keywords,external_ids,season/1'
         : 'credits,videos,images,watch/providers,reviews,similar,recommendations,release_dates,content_ratings,keywords,external_ids';
 
     const data = await tmdbGet(`/${normalizedType}/${numericId}`, {
@@ -1274,43 +1317,170 @@ export async function getOrFetchTitle(
   return doc;
 }
 
+// Helper: Safely unwrap Mongoose Documents & Embedded Subdocuments so object spreads never lose getters into _doc
+const toPlain = (obj) => {
+  if (!obj || typeof obj !== 'object') return obj || {};
+  if (typeof obj.toObject === 'function') return obj.toObject({ getters: false, virtuals: false });
+  if (obj._doc && typeof obj._doc === 'object') return obj._doc;
+  return obj;
+};
+
+export const shapeSeasonDetail = (rawSeason, fallbackSeasonMeta = null, defaultSeasonNum = 1) => {
+  const s = toPlain(rawSeason);
+  const meta = toPlain(fallbackSeasonMeta);
+  const resolvedNum =
+    s.seasonNumber !== undefined && s.seasonNumber !== null
+      ? Number(s.seasonNumber)
+      : s.season_number !== undefined && s.season_number !== null
+        ? Number(s.season_number)
+        : meta?.seasonNumber !== undefined && meta?.seasonNumber !== null
+          ? Number(meta.seasonNumber)
+          : meta?.season_number !== undefined && meta?.season_number !== null
+            ? Number(meta.season_number)
+            : Number(defaultSeasonNum) || 1;
+
+  const posterPath =
+    s.posterPath || s.poster_path || meta?.posterPath || meta?.poster_path || '';
+  const airDate =
+    s.airDate || s.air_date || meta?.airDate || meta?.air_date || '';
+  const rawEpisodes = Array.isArray(s.episodes) ? s.episodes : [];
+
+  const episodes = rawEpisodes.map((rawEp, idx) => {
+    const ep = toPlain(rawEp);
+    const epNum =
+      ep.episodeNumber !== undefined && ep.episodeNumber !== null
+        ? Number(ep.episodeNumber)
+        : ep.episode_number !== undefined && ep.episode_number !== null
+          ? Number(ep.episode_number)
+          : idx + 1;
+    const stillPath = ep.stillPath || ep.still_path || '';
+    const epAirDate = ep.airDate || ep.air_date || '';
+    const voteAverage = Number(ep.voteAverage ?? ep.vote_average ?? 0);
+    return {
+      episodeNumber: epNum,
+      episode_number: epNum,
+      name: ep.name || `Episode ${epNum}`,
+      overview: ep.overview || '',
+      airDate: epAirDate,
+      air_date: epAirDate,
+      runtime: ep.runtime || null,
+      stillPath,
+      still_path: stillPath,
+      stillUrl: img(stillPath, 'w300'),
+      voteAverage,
+      vote_average: voteAverage,
+    };
+  });
+
+  return {
+    seasonNumber: resolvedNum,
+    season_number: resolvedNum,
+    name:
+      s.name ||
+      meta?.name ||
+      (resolvedNum === 0 ? 'Specials' : `Season ${resolvedNum}`),
+    overview: s.overview || meta?.overview || '',
+    airDate,
+    air_date: airDate,
+    posterPath,
+    poster_path: posterPath,
+    posterUrl: img(posterPath, 'w342'),
+    voteAverage: Number(
+      s.voteAverage ?? s.vote_average ?? meta?.voteAverage ?? meta?.vote_average ?? 0,
+    ),
+    episodeCount:
+      episodes.length ||
+      Number(s.episodeCount ?? s.episode_count ?? meta?.episodeCount ?? meta?.episode_count ?? 0),
+    episodes,
+  };
+};
+
 /**
  * Cache-Aside TV Season & Episodes Fetcher:
+ * - Safely normalizes undefined/NaN seasonNumber to Season 1 (or first available season in DB).
+ * - Checks MongoDB `seasonsDetails` first.
+ * - If not cached in MongoDB, fetches `/tv/:tmdbId/season/:sNum` from TMDB, stores in MongoDB, and returns shaped season + episodes.
  */
 export async function getOrFetchSeason(tmdbIdOrSlug, seasonNumber) {
-  const sNum = Number(seasonNumber);
+  const parsedSeason = Number(seasonNumber);
+  let sNum =
+    Number.isInteger(parsedSeason) && parsedSeason >= 0 ? parsedSeason : null;
+
   let tmdbId = Number(tmdbIdOrSlug);
   let doc = null;
-  if (!Number.isInteger(tmdbId) || tmdbId <= 0) {
-    doc = await getOrFetchTitle('tv', tmdbIdOrSlug);
+  if (
+    !Number.isInteger(tmdbId) ||
+    tmdbId <= 0 ||
+    !/^\d+$/.test(String(tmdbIdOrSlug).trim())
+  ) {
+    doc = await getOrFetchTitle('tv', tmdbIdOrSlug, { details: true });
     tmdbId = doc.tmdbId;
   } else {
     doc = await Title.findOne({ mediaType: 'tv', tmdbId });
-  }
-  const existing = doc?.seasonsDetails?.find((s) => s.seasonNumber === sNum);
-  if (existing && existing.episodes?.length) {
-    return existing;
+    if (!doc || !doc.detailsFetched || !Array.isArray(doc.seasons) || doc.seasons.length === 0) {
+      doc = await getOrFetchTitle('tv', tmdbId, { details: true }).catch(() => doc);
+    }
   }
 
-  const data = await tmdbGet(`/tv/${tmdbId}/season/${sNum}`, {
-    language: 'en-US',
-  });
-  if (!data) throw ApiError.notFound('Season not found');
+  const plainSeasons = (doc?.seasons || []).map(toPlain);
+  if (sNum === null) {
+    const firstRegular =
+      plainSeasons.find((s) => Number(s.seasonNumber ?? s.season_number) > 0) ||
+      plainSeasons[0];
+    sNum =
+      firstRegular &&
+      Number.isInteger(Number(firstRegular.seasonNumber ?? firstRegular.season_number))
+        ? Number(firstRegular.seasonNumber ?? firstRegular.season_number)
+        : 1;
+  }
+
+  const seasonMeta = plainSeasons.find(
+    (s) => Number(s.seasonNumber ?? s.season_number) === sNum,
+  );
+  const existing = (doc?.seasonsDetails || [])
+    .map(toPlain)
+    .find((s) => Number(s.seasonNumber ?? s.season_number) === sNum);
+
+  if (existing && Array.isArray(existing.episodes) && existing.episodes.length > 0) {
+    return shapeSeasonDetail(existing, seasonMeta, sNum);
+  }
+
+  let data = null;
+  try {
+    data = await tmdbGet(`/tv/${tmdbId}/season/${sNum}`, {
+      language: 'en-US',
+    });
+  } catch (err) {
+    // If requested seasonNumber failed (e.g. Season 0 not on TMDB) and Season 1 exists, fall back to Season 1
+    if (sNum !== 1) {
+      sNum = 1;
+      data = await tmdbGet(`/tv/${tmdbId}/season/1`, {
+        language: 'en-US',
+      }).catch(() => null);
+    }
+  }
+
+  if (!data) {
+    if (seasonMeta) {
+      return shapeSeasonDetail(seasonMeta, seasonMeta, sNum);
+    }
+    throw ApiError.notFound('Season not found');
+  }
 
   const seasonObj = {
     seasonNumber: data.season_number ?? sNum,
-    name: data.name || `Season ${sNum}`,
-    overview: data.overview || '',
-    airDate: data.air_date || '',
-    posterPath: data.poster_path || '',
-    episodes: (data.episodes || []).map((ep) => ({
-      episodeNumber: ep.episode_number,
-      name: ep.name,
-      overview: ep.overview,
-      airDate: ep.air_date,
-      runtime: ep.runtime,
-      stillPath: ep.still_path,
-      voteAverage: ep.vote_average,
+    name: data.name || seasonMeta?.name || `Season ${sNum}`,
+    overview: data.overview || seasonMeta?.overview || '',
+    airDate: data.air_date || seasonMeta?.airDate || '',
+    posterPath: data.poster_path || seasonMeta?.posterPath || '',
+    episodes: (data.episodes || []).map((ep, idx) => ({
+      episodeNumber: ep.episode_number ?? idx + 1,
+      name: ep.name || `Episode ${ep.episode_number ?? idx + 1}`,
+      overview: ep.overview || '',
+      airDate: ep.air_date || '',
+      runtime: ep.runtime || null,
+      stillPath: ep.still_path || '',
+      voteAverage: ep.vote_average || 0,
     })),
   };
 
@@ -1324,11 +1494,12 @@ export async function getOrFetchSeason(tmdbIdOrSlug, seasonNumber) {
       { $push: { seasonsDetails: seasonObj } },
     );
   }
-  return seasonObj;
+  return shapeSeasonDetail(seasonObj, seasonMeta, sNum);
 }
 
 // ======================= Shapers (Compatible with both Backend & TMDB Frontend Formats) =======================
-export const shapeTitle = (t) => {
+export const shapeTitle = (rawDoc) => {
+  const t = toPlain(rawDoc);
   const posterUrl = t.customPosterUrl || img(t.posterPath, 'w500');
   const backdropUrl = t.customBackdropUrl || img(t.backdropPath, 'w1280');
   const releaseStr = t.releaseDate
@@ -1338,7 +1509,10 @@ export const shapeTitle = (t) => {
       : null;
   const genres =
     t.genres?.length > 0
-      ? t.genres
+      ? t.genres.map((g) => {
+          const pg = toPlain(g);
+          return { id: pg.id, name: pg.name };
+        })
       : (t.genreIds || [])
           .map((id) => ({ id, name: genreNames.get(id) }))
           .filter((g) => g.name);
@@ -1401,61 +1575,89 @@ export const shapeTitle = (t) => {
   };
 };
 
-export const shapeDetail = (t) => {
+export const shapeDetail = (rawDoc) => {
+  const t = toPlain(rawDoc);
   const base = shapeTitle(t);
-  const videos = (t.videos || []).map((v) => ({
-    ...v,
-    url: `https://www.youtube.com/watch?v=${v.key}`,
-    embedUrl: `https://www.youtube.com/embed/${v.key}`,
-    thumbnailUrl: `https://img.youtube.com/vi/${v.key}/hqdefault.jpg`,
-  }));
+  const videos = (t.videos || [])
+    .map((rawV) => {
+      const v = toPlain(rawV);
+      if (!v || !v.key) return null;
+      return {
+        id: v.id || v.key,
+        key: v.key,
+        name: v.name || v.type || 'Video',
+        site: v.site || 'YouTube',
+        type: v.type || 'Clip',
+        official: v.official !== false,
+        publishedAt: v.publishedAt || null,
+        url: `https://www.youtube.com/watch?v=${v.key}`,
+        embedUrl: `https://www.youtube.com/embed/${v.key}`,
+        thumbnailUrl: `https://img.youtube.com/vi/${v.key}/hqdefault.jpg`,
+      };
+    })
+    .filter(Boolean);
 
-  const songs = (t.songs || []).map((s, idx) => ({
-    id: s.id || s.youtubeKey || `song-${idx}`,
-    title: s.title,
-    youtubeKey: s.youtubeKey,
-    artist: s.artist || '',
-    composer: s.composer || (t.musicDirectors || [])[0] || '',
-    lyricist: s.lyricist || '',
-    duration: s.duration || '',
-    language: s.language || t.originalLanguage || 'en',
-    isOfficial: s.isOfficial !== false,
-    url: s.youtubeKey
-      ? `https://www.youtube.com/watch?v=${s.youtubeKey}`
-      : null,
-    embedUrl: s.youtubeKey
-      ? `https://www.youtube.com/embed/${s.youtubeKey}`
-      : null,
-    thumbnailUrl: s.youtubeKey
-      ? `https://img.youtube.com/vi/${s.youtubeKey}/hqdefault.jpg`
-      : null,
-  }));
+  const songs = (t.songs || [])
+    .map((rawS, idx) => {
+      const s = toPlain(rawS);
+      if (!s) return null;
+      return {
+        id: s.id || s.youtubeKey || `song-${idx}`,
+        title: s.title || `Track ${idx + 1}`,
+        youtubeKey: s.youtubeKey,
+        artist: s.artist || '',
+        composer: s.composer || (t.musicDirectors || [])[0] || '',
+        lyricist: s.lyricist || '',
+        duration: s.duration || '',
+        language: s.language || t.originalLanguage || 'en',
+        isOfficial: s.isOfficial !== false,
+        url: s.youtubeKey
+          ? `https://www.youtube.com/watch?v=${s.youtubeKey}`
+          : null,
+        embedUrl: s.youtubeKey
+          ? `https://www.youtube.com/embed/${s.youtubeKey}`
+          : null,
+        thumbnailUrl: s.youtubeKey
+          ? `https://img.youtube.com/vi/${s.youtubeKey}/hqdefault.jpg`
+          : null,
+      };
+    })
+    .filter(Boolean);
 
-  const cast = (t.cast || []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    character: c.character,
-    profilePath: c.profilePath,
-    profile_path: c.profilePath,
-    profileUrl: img(c.profilePath, 'h632'),
-    photoUrl: img(c.profilePath, 'h632'),
-  }));
+  const cast = (t.cast || []).map((rawC) => {
+    const c = toPlain(rawC);
+    return {
+      id: c.id,
+      name: c.name,
+      gender: c.gender || 0,
+      character: c.character,
+      profilePath: c.profilePath,
+      profile_path: c.profilePath,
+      profileUrl: img(c.profilePath, 'h632'),
+      photoUrl: img(c.profilePath, 'h632'),
+    };
+  });
 
-  const crew = (t.crew || []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    job: c.job,
-    department: c.department,
-    profilePath: c.profilePath,
-    profile_path: c.profilePath,
-    profileUrl: img(c.profilePath, 'h632'),
-    photoUrl: img(c.profilePath, 'h632'),
-  }));
+  const crew = (t.crew || []).map((rawC) => {
+    const c = toPlain(rawC);
+    return {
+      id: c.id,
+      name: c.name,
+      gender: c.gender || 0,
+      job: c.job,
+      department: c.department,
+      profilePath: c.profilePath,
+      profile_path: c.profilePath,
+      profileUrl: img(c.profilePath, 'h632'),
+      photoUrl: img(c.profilePath, 'h632'),
+    };
+  });
 
   const budget = Number(t.budget) > 0 ? Number(t.budget) : 0;
+  const rawBoxOffice = toPlain(t.boxOffice);
   const revenue =
-    Number(t.boxOffice?.worldwideCollection || t.revenue) > 0
-      ? Number(t.boxOffice?.worldwideCollection || t.revenue)
+    Number(rawBoxOffice?.worldwideCollection || t.revenue) > 0
+      ? Number(rawBoxOffice?.worldwideCollection || t.revenue)
       : 0;
   const profit = revenue > 0 && budget > 0 ? revenue - budget : 0;
   const roiPercent =
@@ -1467,32 +1669,105 @@ export const shapeDetail = (t) => {
     budget,
     revenue,
     budgetFormatted:
-      t.boxOffice?.budgetFormatted ||
+      rawBoxOffice?.budgetFormatted ||
       (budget > 0 ? `$${budget.toLocaleString()}` : ''),
-    domesticCollection: t.boxOffice?.domesticCollection || 0,
-    internationalCollection: t.boxOffice?.internationalCollection || 0,
+    domesticCollection: rawBoxOffice?.domesticCollection || 0,
+    internationalCollection: rawBoxOffice?.internationalCollection || 0,
     worldwideCollection: revenue,
-    indiaNetCollection: t.boxOffice?.indiaNetCollection || 0,
-    indiaGrossCollection: t.boxOffice?.indiaGrossCollection || 0,
-    openingWeekend: t.boxOffice?.openingWeekend || 0,
-    openingDay: t.boxOffice?.openingDay || 0,
-    currency: t.boxOffice?.currency || 'USD',
+    indiaNetCollection: rawBoxOffice?.indiaNetCollection || 0,
+    indiaGrossCollection: rawBoxOffice?.indiaGrossCollection || 0,
+    openingWeekend: rawBoxOffice?.openingWeekend || 0,
+    openingDay: rawBoxOffice?.openingDay || 0,
+    currency: rawBoxOffice?.currency || 'USD',
     verdict:
       budget > 0 && revenue > 0
-        ? computeVerdict(budget, revenue, t.boxOffice?.verdict)
-        : t.boxOffice?.verdict && t.boxOffice.verdict !== 'TBA'
-          ? t.boxOffice.verdict
+        ? computeVerdict(budget, revenue, rawBoxOffice?.verdict)
+        : rawBoxOffice?.verdict && rawBoxOffice.verdict !== 'TBA'
+          ? rawBoxOffice.verdict
           : '',
     profit,
     roiPercent,
-    notes: t.boxOffice?.notes || '',
+    notes: rawBoxOffice?.notes || '',
   };
 
   const mapProviderLogos = (arr = []) =>
-    arr.map((p) => ({
-      ...p,
-      logoUrl: img(p.logoPath, 'w92'),
+    arr.map((rawP) => {
+      const p = toPlain(rawP);
+      return {
+        id: p.id,
+        name: p.name,
+        logoPath: p.logoPath,
+        logoUrl: img(p.logoPath, 'w92'),
+      };
+    });
+
+  // Unwrap & sort TV / Web Series seasons so Season 1..N appear first and Season 0 (Specials) last
+  let shapedSeasons = (t.seasons || [])
+    .map((rawS, idx) => {
+      const s = toPlain(rawS);
+      const sNum =
+        s.seasonNumber !== undefined && s.seasonNumber !== null
+          ? Number(s.seasonNumber)
+          : s.season_number !== undefined && s.season_number !== null
+            ? Number(s.season_number)
+            : idx + 1;
+      const epCount = Number(s.episodeCount ?? s.episode_count ?? 0);
+      const posterPath = s.posterPath ?? s.poster_path ?? null;
+      const airDate = s.airDate ?? s.air_date ?? '';
+      const voteAvg = Number(s.voteAverage ?? s.vote_average ?? 0);
+      return {
+        seasonNumber: sNum,
+        season_number: sNum,
+        name: s.name || (sNum === 0 ? 'Specials' : `Season ${sNum}`),
+        episodeCount: epCount,
+        episode_count: epCount,
+        airDate,
+        air_date: airDate,
+        posterPath,
+        poster_path: posterPath,
+        posterUrl: img(posterPath || t.posterPath, 'w342'),
+        overview: s.overview || '',
+        voteAverage: voteAvg,
+        vote_average: voteAvg,
+      };
+    })
+    .sort((a, b) => {
+      if (a.seasonNumber === 0 && b.seasonNumber !== 0) return 1;
+      if (b.seasonNumber === 0 && a.seasonNumber !== 0) return -1;
+      return a.seasonNumber - b.seasonNumber;
+    });
+
+  const totalSeasonCount =
+    Number(t.numberOfSeasons) ||
+    shapedSeasons.filter((s) => s.seasonNumber > 0).length ||
+    shapedSeasons.length ||
+    (t.mediaType === 'tv' ? 1 : 0);
+
+  if (t.mediaType === 'tv' && shapedSeasons.length === 0 && totalSeasonCount > 0) {
+    shapedSeasons = Array.from({ length: totalSeasonCount }, (_, i) => ({
+      seasonNumber: i + 1,
+      season_number: i + 1,
+      name: `Season ${i + 1}`,
+      episodeCount: Number(t.numberOfEpisodes) || 0,
+      episode_count: Number(t.numberOfEpisodes) || 0,
+      airDate: '',
+      air_date: '',
+      posterPath: t.posterPath || null,
+      poster_path: t.posterPath || null,
+      posterUrl: img(t.posterPath, 'w342'),
+      overview: t.overview || '',
+      voteAverage: Number(t.voteAverage) || 0,
+      vote_average: Number(t.voteAverage) || 0,
     }));
+  }
+
+  const shapedSeasonsDetails = (t.seasonsDetails || []).map((sd) => {
+    const plainSd = toPlain(sd);
+    const meta = shapedSeasons.find(
+      (s) => s.seasonNumber === Number(plainSd.seasonNumber ?? plainSd.season_number),
+    );
+    return shapeSeasonDetail(plainSd, meta, plainSd.seasonNumber ?? 1);
+  });
 
   return {
     ...base,
@@ -1507,25 +1782,34 @@ export const shapeDetail = (t) => {
     countries: t.countries || [],
     languages: t.languages || [],
     keywords: t.keywords || [],
-    productionCompanies: (t.productionCompanies || []).map((p) => ({
-      ...p,
-      logoUrl: img(p.logoPath, 'w185'),
-    })),
-    networks: (t.networks || []).map((n) => ({
-      ...n,
-      logoUrl: img(n.logoPath, 'w185'),
-    })),
+    productionCompanies: (t.productionCompanies || []).map((rawP) => {
+      const p = toPlain(rawP);
+      return {
+        id: p.id,
+        name: p.name,
+        logoPath: p.logoPath,
+        country: p.country,
+        logoUrl: img(p.logoPath, 'w185'),
+      };
+    }),
+    networks: (t.networks || []).map((rawN) => {
+      const n = toPlain(rawN);
+      return {
+        id: n.id,
+        name: n.name,
+        logoPath: n.logoPath,
+        logoUrl: img(n.logoPath, 'w185'),
+      };
+    }),
     budget,
     revenue,
     boxOffice,
-    numberOfSeasons: t.numberOfSeasons || t.seasons?.length || 0,
-    number_of_seasons: t.numberOfSeasons || t.seasons?.length || 0,
+    numberOfSeasons: totalSeasonCount,
+    number_of_seasons: totalSeasonCount,
     numberOfEpisodes: t.numberOfEpisodes || 0,
     number_of_episodes: t.numberOfEpisodes || 0,
-    seasons: (t.seasons || []).map((s) => ({
-      ...s,
-      posterUrl: img(s.posterPath, 'w342'),
-    })),
+    seasons: shapedSeasons,
+    seasonsDetails: shapedSeasonsDetails,
     directors: t.directors || [],
     writers: t.writers || [],
     producers: t.producers || [],
@@ -1566,14 +1850,23 @@ export const shapeDetail = (t) => {
       rent: mapProviderLogos(t.watchProviders?.rent),
       buy: mapProviderLogos(t.watchProviders?.buy),
     },
-    tmdbReviews: (t.tmdbReviews || []).map((r) => ({
-      ...r,
-      avatarUrl: r.authorAvatar
-        ? r.authorAvatar.startsWith('/http')
-          ? r.authorAvatar.slice(1)
-          : img(r.authorAvatar, 'w185')
-        : null,
-    })),
+    tmdbReviews: (t.tmdbReviews || []).map((rawR) => {
+      const r = toPlain(rawR);
+      return {
+        id: r.id,
+        author: r.author,
+        authorAvatar: r.authorAvatar,
+        rating: r.rating,
+        content: r.content,
+        url: r.url,
+        createdAt: r.createdAt,
+        avatarUrl: r.authorAvatar
+          ? r.authorAvatar.startsWith('/http')
+            ? r.authorAvatar.slice(1)
+            : img(r.authorAvatar, 'w185')
+          : null,
+      };
+    }),
     lockedFields: t.lockedFields || [],
     hasFullDetails: !!t.detailsFetched,
   };

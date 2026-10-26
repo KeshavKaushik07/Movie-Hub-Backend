@@ -121,8 +121,8 @@ const titleSchema = new mongoose.Schema(
     writers: [String],
     producers: [String],
     musicDirectors: [String],
-    cast: [{ id: Number, name: String, character: String, profilePath: String, order: Number, _id: false }],
-    crew: [{ id: Number, name: String, job: String, department: String, profilePath: String, _id: false }],
+    cast: [{ id: Number, name: String, character: String, profilePath: String, order: Number, gender: Number, _id: false }],
+    crew: [{ id: Number, name: String, job: String, department: String, profilePath: String, gender: Number, _id: false }],
 
     // TV & Web Series Seasons
     numberOfSeasons: Number,
