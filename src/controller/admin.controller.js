@@ -115,7 +115,7 @@ export const getStats = asyncHandler(async (_req, res) => {
 
 export const listUsers = asyncHandler(async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const filter = {};
 
   if (req.query.q) {
@@ -212,8 +212,8 @@ export const setActive = asyncHandler(async (req, res) => {
 
 export const setRole = asyncHandler(async (req, res) => {
   const { role } = req.body;
-  if (!['user', 'admin'].includes(role)) {
-    throw ApiError.badRequest("Role must be 'user' or 'admin'");
+  if (!['user', 'admin', 'superadmin'].includes(role)) {
+    throw ApiError.badRequest("Role must be 'user', 'admin', or 'superadmin'");
   }
   const target = await User.findById(req.params.id);
   if (!target) throw ApiError.notFound('User not found');

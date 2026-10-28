@@ -28,7 +28,7 @@ import { protect, authorize } from '../middleware/auth.middleware.js';
 
 const r = Router();
 
-r.use(protect, authorize('superadmin'));
+r.use(protect, authorize('admin', 'superadmin'));
 
 // Staff & User Account Creation
 r.post('/users', createStaffOrUser);
