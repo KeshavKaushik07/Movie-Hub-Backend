@@ -1,19 +1,63 @@
 import mongoose from 'mongoose';
 import { MEDIA_TYPES, SUB_TYPES } from '../config/constant.js';
 
+export const GROUP_SYMBOLS = [
+  '🎬',
+  '🍿',
+  '🎥',
+  '🎞️',
+  '📽️',
+  '🎭',
+  '📺',
+  '🔥',
+  '⭐',
+  '🌟',
+  '💎',
+  '🏆',
+  '👑',
+  '🚀',
+  '💬',
+  '🗣️',
+  '📢',
+  '🎧',
+  '🎵',
+  '🎸',
+  '🕹️',
+  '👾',
+  '🦸',
+  '🦹',
+  '🕵️',
+  '👻',
+  '👽',
+  '🤖',
+  '🐉',
+  '⚔️',
+  '🛡️',
+  '🇮🇳',
+  '🌍',
+  '🌸',
+  '⛩️',
+  '💰',
+  '📈',
+  '❤️',
+  '⚡',
+  '🌙',
+];
+
 /**
- * Community Chat Room & Direct Message Conversation Schema
- * Supports 3 room types in one unified scalable model:
- * 1. `public`: Global topic lounges (e.g., Bollywood Hub, Box Office Club, Sci-Fi & Thriller, Anime & K-Drama)
- * 2. `movie`: Dedicated live discussion room for a specific Movie/TV/WebSeries (`tmdbId` + `mediaType`)
- * 3. `dm`: Private 1-on-1 Direct Message chat between two users (`participants` + unique `dmKey`)
+ * Community Chat Room Schema
+ * Supports user-created and admin-created communities with:
+ * - Multiple transferable Group Admins (`admins`)
+ * - Explicit Community Membership (`members`) required before chatting
+ * - Blocked users list (`blockedUsers`) and Community Lock/Block status (`isLocked`, `isBlocked`)
+ * - Top-level posts counter (`messageCount`, excluding replies)
  */
 const communityRoomSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 140 },
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
     description: { type: String, trim: true, maxlength: 500, default: '' },
-    icon: { type: String, trim: true, default: '💬' },
+    icon: { type: String, trim: true, default: '🎬' },
 
     roomType: {
       type: String,
@@ -23,34 +67,49 @@ const communityRoomSchema = new mongoose.Schema(
     },
     topic: {
       type: String,
-      enum: ['general', 'bollywood', 'hollywood', 'tollywood', 'webseries', 'boxoffice', 'anime', 'spoilers', 'movie', 'dm'],
+      enum: [
+        'general',
+        'bollywood',
+        'hollywood',
+        'tollywood',
+        'webseries',
+        'boxoffice',
+        'anime',
+        'spoilers',
+        'fanclub',
+        'movie',
+        'dm',
+      ],
       default: 'general',
       index: true,
     },
 
-    // Optional link to a specific Movie / TV Show / Web Series (for `roomType === 'movie'`)
+    // Optional link to a specific Movie / TV Show / Web Series
     tmdbId: { type: Number, default: null, index: true },
     mediaType: { type: String, enum: [...MEDIA_TYPES, null], default: null },
     subType: { type: String, enum: [...SUB_TYPES, null], default: null },
     coverImage: { type: String, trim: true, default: '' },
     posterImage: { type: String, trim: true, default: '' },
 
-    // For `roomType === 'dm'` (1-on-1 chat between two users)
+    // Legacy 1-on-1 fields kept only for schema compatibility
     participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true }],
-    dmKey: { type: String, default: null, index: true }, // Canonical sorted pair: "<userA_id>:<userB_id>"
+    dmKey: { type: String, default: null, index: true },
 
-    // Membership & Moderation
+    // Group Admins (multiple allowed, transferable) & Community Members
+    admins: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     memberCount: { type: Number, default: 0 },
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     mutedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
     isOfficial: { type: Boolean, default: false },
     isLocked: { type: Boolean, default: false },
+    isBlocked: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true, index: true },
     slowModeSeconds: { type: Number, default: 0, min: 0, max: 300 },
 
-    // Denormalized last message preview for fast room-list sorting
+    // Denormalized top-level posts count (replies excluded) & last message preview
     messageCount: { type: Number, default: 0 },
     lastMessageAt: { type: Date, default: Date.now, index: true },
     lastMessagePreview: {

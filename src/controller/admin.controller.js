@@ -12,6 +12,7 @@ import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { recalcSiteRating as recalculateRatings, titlesByPairs } from '../services/title.service.js';
 import { getCrawlerStatus } from '../services/crawler.service.js';
+import { TOP_LEVEL_POST_FILTER, recalculateRoomPostCount } from './community.controller.js';
 
 export const getStats = asyncHandler(async (_req, res) => {
   const [
@@ -54,8 +55,8 @@ export const getStats = asyncHandler(async (_req, res) => {
     Featured.countDocuments(),
     Blog.countDocuments(),
     BlogComment.countDocuments({ isHidden: { $ne: true } }),
-    CommunityRoom.countDocuments({ roomType: { $in: ['public', 'movie'] }, isActive: true }),
-    CommunityMessage.countDocuments({ isHidden: { $ne: true } }),
+    CommunityRoom.countDocuments({ roomType: 'public', isActive: true }),
+    CommunityMessage.countDocuments(TOP_LEVEL_POST_FILTER),
     User.find().sort('-createdAt').limit(8),
     Title.find({ siteReviewCount: { $gt: 0 } })
       .sort({ siteReviewCount: -1, siteRating: -1 })
@@ -143,6 +144,42 @@ export const listUsers = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Helper: When a user is blocked/suspended or deleted by Admin, remove all of their
+ * community posts & replies completely and recalculate affected rooms' post counts.
+ */
+const purgeBlockedUserCommunityActivity = async (userId) => {
+  const userMsgs = await CommunityMessage.find({ sender: userId }).select('_id room').lean();
+  const affectedRoomIds = new Set(userMsgs.map((m) => String(m.room)));
+  const userMsgIds = userMsgs.map((m) => m._id);
+
+  if (userMsgIds.length > 0) {
+    await CommunityMessage.deleteMany({
+      $or: [{ sender: userId }, { 'replyTo.messageId': { $in: userMsgIds } }],
+    });
+  }
+
+  const memberRooms = await CommunityRoom.find({
+    $or: [{ members: userId }, { admins: userId }],
+  }).select('_id members admins createdBy blockedUsers');
+
+  for (const r of memberRooms) {
+    affectedRoomIds.add(String(r._id));
+    r.members = (r.members || []).filter((id) => String(id) !== String(userId));
+    r.admins = (r.admins || []).filter((id) => String(id) !== String(userId));
+    if (r.createdBy && String(r.createdBy) === String(userId)) {
+      r.createdBy = r.admins[0] || r.members[0] || null;
+      if (r.createdBy && r.admins.length === 0) {
+        r.admins = [r.createdBy];
+      }
+    }
+    r.memberCount = r.members.length;
+    await r.save();
+  }
+
+  await Promise.all(Array.from(affectedRoomIds).map((rid) => recalculateRoomPostCount(rid)));
+};
+
 export const setActive = asyncHandler(async (req, res) => {
   const { isActive, reason = '' } = req.body;
   const target = await User.findById(req.params.id);
@@ -164,6 +201,11 @@ export const setActive = asyncHandler(async (req, res) => {
     target.refreshTokens = [];
   }
   await target.save();
+
+  // If user is blocked/suspended by Admin, completely delete all their community posts
+  if (!target.isActive) {
+    await purgeBlockedUserCommunityActivity(target._id);
+  }
 
   res.json({ success: true, user: target });
 });
@@ -225,6 +267,7 @@ export const removeUser = asyncHandler(async (req, res) => {
     Review.deleteMany({ user: target._id }),
     Comment.deleteMany({ user: target._id }),
     Watchlist.deleteMany({ user: target._id }),
+    purgeBlockedUserCommunityActivity(target._id),
   ]);
 
   res.json({ success: true, message: 'User and associated activity deleted' });
