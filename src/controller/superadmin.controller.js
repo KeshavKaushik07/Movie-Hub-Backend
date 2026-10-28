@@ -41,6 +41,9 @@ export const createStaffOrUser = asyncHandler(async (req, res) => {
     throw ApiError.badRequest('Name and email are required');
   if (![ROLES.USER, ROLES.ADMIN, ROLES.SUPERADMIN].includes(role))
     throw ApiError.badRequest('Role must be "user", "admin", or "superadmin"');
+  if (role === ROLES.SUPERADMIN && req.user.role !== ROLES.SUPERADMIN) {
+    throw ApiError.forbidden('Only a Super Admin can create another Super Admin account');
+  }
   assertStrongPassword(password);
   const user = await User.create({
     name: name.trim(),
@@ -157,9 +160,10 @@ export const listDatabaseTitles = asyncHandler(async (req, res) => {
     filter.$and = andConditions;
   }
 
+  const hasFilter = Object.keys(filter).length > 0 || andConditions.length > 0;
   const [docs, total] = await Promise.all([
     Title.find(filter).sort(sortQuery).skip(skip).limit(limit).lean(),
-    Title.countDocuments(filter),
+    hasFilter ? Title.countDocuments(filter) : Title.estimatedDocumentCount(),
   ]);
 
   res.json({
@@ -172,6 +176,7 @@ export const listDatabaseTitles = asyncHandler(async (req, res) => {
       songsCount: (d.songs || []).length,
       videosCount: (d.videos || []).length,
       boxOffice: d.boxOffice || {},
+      createdAt: d.createdAt,
       updatedAt: d.updatedAt,
     })),
     page,
@@ -309,7 +314,10 @@ export const updateTitleDetails = asyncHandler(async (req, res) => {
     throw ApiError.badRequest('Invalid title type or ID');
   }
 
-  let doc = await getOrFetchTitle(mediaType, tmdbId, { details: true });
+  let doc = await Title.findOne({ mediaType, tmdbId });
+  if (!doc) {
+    doc = await getOrFetchTitle(mediaType, tmdbId, { details: true });
+  }
   const b = req.body;
   const locked = new Set(doc.lockedFields || []);
   const updates = {};

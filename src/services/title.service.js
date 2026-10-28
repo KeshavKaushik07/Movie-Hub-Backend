@@ -1693,6 +1693,8 @@ export const shapeTitle = (rawDoc) => {
             : '',
     ottProviders: t.ottProviders || [],
     regions: t.regions || [],
+    createdAt: t.createdAt || null,
+    updatedAt: t.updatedAt || null,
   };
 };
 

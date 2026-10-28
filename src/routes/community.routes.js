@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   listGroupSymbols,
+  listRoomTopics,
   listPublicRooms,
   getOrCreateMovieRoom,
   createCommunityRoom,
@@ -25,8 +26,9 @@ import { protect, optionalAuth } from '../middleware/auth.middleware.js';
 
 const r = Router();
 
-// Curated Group Symbols
+// Curated Group Symbols & Dynamic Topics
 r.get('/symbols', listGroupSymbols);
+r.get('/topics', listRoomTopics);
 
 // Communities (Any authenticated user can create a community; Room Admins & Site Admins can manage)
 r.get('/rooms', optionalAuth, listPublicRooms);

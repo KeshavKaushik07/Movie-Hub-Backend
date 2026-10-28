@@ -48,17 +48,17 @@ r.put('/featured/reorder', reorderFeaturedItems);
 r.patch('/featured/:id', updateFeaturedItem);
 r.delete('/featured/:id', removeFeaturedItem);
 
-// TMDB API Key Pool Management
-r.get('/api-keys', listKeys);
-r.post('/api-keys', addKey);
-r.patch('/api-keys/:id', updateKey);
-r.delete('/api-keys/:id', deleteKey);
-r.post('/api-keys/:id/test', testKey);
+// TMDB API Key Pool Management (Strictly SuperAdmin Only)
+r.get('/api-keys', authorize('superadmin'), listKeys);
+r.post('/api-keys', authorize('superadmin'), addKey);
+r.patch('/api-keys/:id', authorize('superadmin'), updateKey);
+r.delete('/api-keys/:id', authorize('superadmin'), deleteKey);
+r.post('/api-keys/:id/test', authorize('superadmin'), testKey);
 
-// 1-Lakh Background Crawler Controls
-r.get('/crawler', crawlerStatus);
-r.post('/crawler/start', crawlerStart);
-r.post('/crawler/stop', crawlerStop);
-r.patch('/crawler/cap', crawlerUpdateCap);
+// 1-Lakh Background Crawler Controls (Strictly SuperAdmin Only)
+r.get('/crawler', authorize('superadmin'), crawlerStatus);
+r.post('/crawler/start', authorize('superadmin'), crawlerStart);
+r.post('/crawler/stop', authorize('superadmin'), crawlerStop);
+r.patch('/crawler/cap', authorize('superadmin'), crawlerUpdateCap);
 
 export default r;

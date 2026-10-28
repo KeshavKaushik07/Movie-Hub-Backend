@@ -1,3 +1,4 @@
+import User from '../models/User.js';
 import Comment from '../models/Comment.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -69,6 +70,10 @@ export const deleteComment = asyncHandler(async (req, res) => {
   const c = await Comment.findById(req.params.id);
   if (!c) throw ApiError.notFound('Comment not found');
   if (!c.user.equals(req.user._id) && req.user.role === ROLES.USER) throw ApiError.forbidden();
+  const author = await User.findById(c.user).select('role');
+  if (author?.role === 'superadmin' && req.user.role !== ROLES.SUPERADMIN) {
+    throw ApiError.forbidden('Cannot delete content created by a Super Admin');
+  }
   await Comment.deleteMany({ $or: [{ _id: c._id }, { parent: c._id }] });
   res.status(204).end();
 });

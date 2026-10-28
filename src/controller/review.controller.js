@@ -1,10 +1,15 @@
+import User from '../models/User.js';
 import Review from '../models/Review.js';
 import Title from '../models/Title.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { parseTitle } from '../utils/title.js';
 import { ROLES } from '../config/constant.js';
-import { getOrFetchTitle, recalcSiteRating, titlesByPairs } from '../services/title.service.js';
+import {
+  getOrFetchTitle,
+  recalcSiteRating,
+  titlesByPairs,
+} from '../services/title.service.js';
 
 const sanitizeExternalUrl = (raw) => {
   if (!raw || typeof raw !== 'string') return '';
@@ -47,22 +52,56 @@ const withUser = (q) => q.populate('user', 'name avatarColor role');
 // GET /titles/:type/:tmdbId/reviews -> { reviews, criticReviews, tmdbReviews, stats, mine }
 export const listReviews = asyncHandler(async (req, res) => {
   const parsed = parseTitle(req);
-  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
-  const f = { type: resolvedDoc?.mediaType || parsed.type, tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId };
-  const [userReviews, criticReviews, aggUser, aggCritic, mine, titleDoc] = await Promise.all([
-    withUser(Review.find({ ...f, reviewType: { $ne: 'critic' }, isHidden: { $ne: true } }).sort('-isFeatured -createdAt').limit(100)),
-    withUser(Review.find({ ...f, reviewType: 'critic', isHidden: { $ne: true } }).sort('-isFeatured -createdAt').limit(50)),
-    Review.aggregate([
-      { $match: { ...f, reviewType: { $ne: 'critic' }, isHidden: { $ne: true } } },
-      { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
-    ]),
-    Review.aggregate([
-      { $match: { ...f, reviewType: 'critic', isHidden: { $ne: true } } },
-      { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
-    ]),
-    req.user ? withUser(Review.findOne({ ...f, user: req.user._id, reviewType: { $ne: 'critic' } })) : null,
-    Title.findOne({ mediaType: f.type, tmdbId: f.tmdbId }).select('tmdbReviews').lean(),
-  ]);
+  const resolvedDoc = parsed.isSlug
+    ? await getOrFetchTitle(parsed.type, parsed.slug)
+    : null;
+  const f = {
+    type: resolvedDoc?.mediaType || parsed.type,
+    tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId,
+  };
+  const [userReviews, criticReviews, aggUser, aggCritic, mine, titleDoc] =
+    await Promise.all([
+      withUser(
+        Review.find({
+          ...f,
+          reviewType: { $ne: 'critic' },
+          isHidden: { $ne: true },
+        })
+          .sort('-isFeatured -createdAt')
+          .limit(100),
+      ),
+      withUser(
+        Review.find({ ...f, reviewType: 'critic', isHidden: { $ne: true } })
+          .sort('-isFeatured -createdAt')
+          .limit(50),
+      ),
+      Review.aggregate([
+        {
+          $match: {
+            ...f,
+            reviewType: { $ne: 'critic' },
+            isHidden: { $ne: true },
+          },
+        },
+        { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+      ]),
+      Review.aggregate([
+        { $match: { ...f, reviewType: 'critic', isHidden: { $ne: true } } },
+        { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+      ]),
+      req.user
+        ? withUser(
+            Review.findOne({
+              ...f,
+              user: req.user._id,
+              reviewType: { $ne: 'critic' },
+            }),
+          )
+        : null,
+      Title.findOne({ mediaType: f.type, tmdbId: f.tmdbId })
+        .select('tmdbReviews')
+        .lean(),
+    ]);
 
   res.json({
     reviews: userReviews.map((r) => shape(r, req.user?._id)),
@@ -81,8 +120,13 @@ export const listReviews = asyncHandler(async (req, res) => {
 // PUT /titles/:type/:tmdbId/reviews { rating, headline?, text?, spoiler? } -> { review }
 export const saveReview = asyncHandler(async (req, res) => {
   const parsed = parseTitle(req);
-  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
-  const f = { type: resolvedDoc?.mediaType || parsed.type, tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId };
+  const resolvedDoc = parsed.isSlug
+    ? await getOrFetchTitle(parsed.type, parsed.slug)
+    : null;
+  const f = {
+    type: resolvedDoc?.mediaType || parsed.type,
+    tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId,
+  };
   const rating = Number(req.body.rating);
   if (!Number.isInteger(rating) || rating < 1 || rating > 10) {
     throw ApiError.badRequest('Rating must be a whole number from 1 to 10');
@@ -93,12 +137,23 @@ export const saveReview = asyncHandler(async (req, res) => {
       { ...f, user: req.user._id, reviewType: 'user' },
       {
         rating,
-        headline: typeof req.body.headline === 'string' ? req.body.headline.trim().slice(0, 160) : '',
-        text: typeof req.body.text === 'string' ? req.body.text.trim().slice(0, 4000) : '',
+        headline:
+          typeof req.body.headline === 'string'
+            ? req.body.headline.trim().slice(0, 160)
+            : '',
+        text:
+          typeof req.body.text === 'string'
+            ? req.body.text.trim().slice(0, 4000)
+            : '',
         spoiler: Boolean(req.body.spoiler),
         reviewType: 'user',
       },
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      },
     ),
   );
   await recalcSiteRating(f.type, f.tmdbId);
@@ -108,14 +163,21 @@ export const saveReview = asyncHandler(async (req, res) => {
 // POST /titles/:type/:tmdbId/critic-reviews (Admin & SuperAdmin)
 export const addCriticReview = asyncHandler(async (req, res) => {
   const parsed = parseTitle(req);
-  const resolvedDoc = parsed.isSlug ? await getOrFetchTitle(parsed.type, parsed.slug) : null;
-  const f = { type: resolvedDoc?.mediaType || parsed.type, tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId };
+  const resolvedDoc = parsed.isSlug
+    ? await getOrFetchTitle(parsed.type, parsed.slug)
+    : null;
+  const f = {
+    type: resolvedDoc?.mediaType || parsed.type,
+    tmdbId: resolvedDoc?.tmdbId || parsed.tmdbId,
+  };
   const rating = Number(req.body.rating);
   if (!Number.isFinite(rating) || rating < 1 || rating > 10) {
     throw ApiError.badRequest('Critic rating must be between 1 and 10');
   }
   const criticName = String(req.body.criticName || req.user.name || '').trim();
-  const publication = String(req.body.publication || 'Movies Hub Critics').trim();
+  const publication = String(
+    req.body.publication || 'Movies Hub Critics',
+  ).trim();
   const text = String(req.body.text || '').trim();
   if (!text) throw ApiError.badRequest('Critic review text is required');
 
@@ -143,7 +205,9 @@ export const toggleReviewLike = asyncHandler(async (req, res) => {
   const had = await Review.exists({ _id: req.params.id, likes: req.user._id });
   const r = await Review.findByIdAndUpdate(
     req.params.id,
-    had ? { $pull: { likes: req.user._id } } : { $addToSet: { likes: req.user._id } },
+    had
+      ? { $pull: { likes: req.user._id } }
+      : { $addToSet: { likes: req.user._id } },
     { new: true },
   );
   if (!r) throw ApiError.notFound('Review not found');
@@ -154,7 +218,12 @@ export const toggleReviewLike = asyncHandler(async (req, res) => {
 export const deleteReview = asyncHandler(async (req, res) => {
   const r = await Review.findById(req.params.id);
   if (!r) throw ApiError.notFound('Review not found');
-  if (!r.user.equals(req.user._id) && req.user.role === ROLES.USER) throw ApiError.forbidden();
+  if (!r.user.equals(req.user._id) && req.user.role === ROLES.USER)
+    throw ApiError.forbidden();
+  const author = await User.findById(r.user).select('role');
+  if (author?.role === 'superadmin' && req.user.role !== ROLES.SUPERADMIN) {
+    throw ApiError.forbidden('Cannot delete content created by a Super Admin');
+  }
   await r.deleteOne();
   await recalcSiteRating(r.type, r.tmdbId);
   res.status(204).end();
@@ -162,8 +231,12 @@ export const deleteReview = asyncHandler(async (req, res) => {
 
 // GET /users/me/reviews
 export const myReviews = asyncHandler(async (req, res) => {
-  const reviews = await Review.find({ user: req.user._id }).sort('-updatedAt').limit(100);
-  const titles = await titlesByPairs(reviews.map((r) => ({ type: r.type, tmdbId: r.tmdbId })));
+  const reviews = await Review.find({ user: req.user._id })
+    .sort('-updatedAt')
+    .limit(100);
+  const titles = await titlesByPairs(
+    reviews.map((r) => ({ type: r.type, tmdbId: r.tmdbId })),
+  );
   res.json({
     reviews: reviews.map((r) => ({
       id: r.id,

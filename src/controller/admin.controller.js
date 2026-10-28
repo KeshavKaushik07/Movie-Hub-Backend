@@ -220,6 +220,12 @@ export const setRole = asyncHandler(async (req, res) => {
   if (target.role === 'superadmin') {
     throw ApiError.forbidden('Superadmin role cannot be modified');
   }
+  if (role === 'superadmin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Only a SuperAdmin can assign the SuperAdmin role');
+  }
+  if (target.role === 'admin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Only a SuperAdmin can modify an Admin account role');
+  }
   target.role = role;
   await target.save();
   res.json({ success: true, user: target });
@@ -321,6 +327,9 @@ export const listAllReviews = asyncHandler(async (req, res) => {
 export const moderateReview = asyncHandler(async (req, res) => {
   const review = await Review.findById(req.params.id).populate('user', 'name email role avatarColor');
   if (!review) throw ApiError.notFound('Review not found');
+  if (review.user && review.user.role === 'superadmin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Cannot modify a review created by a Super Admin');
+  }
 
   const {
     isHidden,
@@ -372,8 +381,11 @@ export const moderateReview = asyncHandler(async (req, res) => {
 });
 
 export const adminDeleteReview = asyncHandler(async (req, res) => {
-  const review = await Review.findById(req.params.id);
+  const review = await Review.findById(req.params.id).populate('user', 'role');
   if (!review) throw ApiError.notFound('Review not found');
+  if (review.user && review.user.role === 'superadmin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Cannot delete a review created by a Super Admin');
+  }
   const { type, tmdbId } = review;
   await review.deleteOne();
   await recalculateRatings(type, tmdbId);
@@ -421,8 +433,11 @@ export const listAllComments = asyncHandler(async (req, res) => {
 });
 
 export const moderateComment = asyncHandler(async (req, res) => {
-  const comment = await Comment.findById(req.params.id);
+  const comment = await Comment.findById(req.params.id).populate('user', 'role');
   if (!comment) throw ApiError.notFound('Comment not found');
+  if (comment.user && comment.user.role === 'superadmin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Cannot modify a comment created by a Super Admin');
+  }
 
   const { isHidden, isPinned, spoiler, body } = req.body;
   if (typeof isHidden === 'boolean') comment.isHidden = isHidden;
@@ -435,8 +450,11 @@ export const moderateComment = asyncHandler(async (req, res) => {
 });
 
 export const adminDeleteComment = asyncHandler(async (req, res) => {
-  const comment = await Comment.findById(req.params.id);
+  const comment = await Comment.findById(req.params.id).populate('user', 'role');
   if (!comment) throw ApiError.notFound('Comment not found');
+  if (comment.user && comment.user.role === 'superadmin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Cannot delete a comment created by a Super Admin');
+  }
   await Comment.deleteMany({ $or: [{ _id: comment._id }, { parent: comment._id }] });
   res.json({ success: true, message: 'Comment thread deleted' });
 });

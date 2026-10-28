@@ -263,6 +263,32 @@ const assertRoomAccess = (room) => {
  * Public: Get Available Group Symbols
  * GET /api/v1/community/symbols
  */
+/**
+ * Public: List dynamic community room topics from DB + defaults
+ * GET /api/v1/community/topics
+ */
+export const listRoomTopics = asyncHandler(async (_req, res) => {
+  const distinctTopics = await CommunityRoom.distinct('topic', { isActive: true });
+  const standardTopics = [
+    'general',
+    'bollywood',
+    'hollywood',
+    'tollywood',
+    'webseries',
+    'boxoffice',
+    'anime',
+    'spoilers',
+    'fanclub',
+  ];
+  const set = new Set(
+    [...standardTopics, ...distinctTopics]
+      .filter(Boolean)
+      .map((t) => String(t).toLowerCase().trim())
+  );
+  const topics = Array.from(set).filter(Boolean);
+  res.json({ success: true, topics });
+});
+
 export const listGroupSymbols = asyncHandler(async (_req, res) => {
   res.json({
     success: true,
@@ -478,18 +504,7 @@ export const createCommunityRoom = asyncHandler(async (req, res) => {
       .slice(0, 75) || 'community';
 
   const cleanIcon = String(icon || '🎬').trim() || '🎬';
-  const validTopics = [
-    'general',
-    'bollywood',
-    'hollywood',
-    'tollywood',
-    'webseries',
-    'boxoffice',
-    'anime',
-    'spoilers',
-    'fanclub',
-  ];
-  const safeTopic = validTopics.includes(topic) ? topic : 'general';
+  const cleanTopic = String(topic || 'general').trim().toLowerCase().slice(0, 50) || 'general';
   const isStaff = ['admin', 'superadmin'].includes(req.user.role);
 
   const room = await CommunityRoom.create({
@@ -500,7 +515,7 @@ export const createCommunityRoom = asyncHandler(async (req, res) => {
       .slice(0, 500),
     icon: cleanIcon,
     roomType: 'public',
-    topic: safeTopic,
+    topic: cleanTopic,
     slowModeSeconds: Math.max(0, Math.min(300, Number(slowModeSeconds) || 0)),
     createdBy: req.user._id,
     admins: [req.user._id],
@@ -1351,6 +1366,12 @@ export const updateOrModerateMessage = asyncHandler(async (req, res) => {
     );
   }
 
+  // Enforce role hierarchy: regular admin/user cannot modify content posted by superadmin
+  const modMsgAuthor = await User.findById(msg.sender).select('role');
+  if (modMsgAuthor?.role === 'superadmin' && req.user.role !== 'superadmin' && !isOwner) {
+    throw ApiError.forbidden('Cannot moderate or edit content posted by a Super Admin');
+  }
+
   if (isOwner && req.body.text !== undefined) {
     const clean = String(req.body.text).trim();
     if (!clean) throw ApiError.badRequest('Message text cannot be empty');
@@ -1397,6 +1418,12 @@ export const deleteRoomMessage = asyncHandler(async (req, res) => {
     throw ApiError.forbidden('You cannot delete this message');
   }
 
+  // Enforce role hierarchy: regular admin/user cannot delete content posted by superadmin
+  const msgAuthor = await User.findById(msg.sender).select('role');
+  if (msgAuthor?.role === 'superadmin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Cannot delete content posted by a Super Admin');
+  }
+
   const roomId = msg.room;
   const deletedId = String(msg._id);
 
@@ -1434,6 +1461,12 @@ export const updateCommunityRoom = asyncHandler(async (req, res) => {
     throw ApiError.forbidden(
       'Only a Community Admin or Site Admin can update this community',
     );
+  }
+
+  // Enforce role hierarchy: regular admin/user cannot update room created by superadmin
+  const roomCreator = await User.findById(room.createdBy).select('role');
+  if (roomCreator?.role === 'superadmin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Cannot modify a community room created by Super Admin');
   }
 
   const {
@@ -1521,6 +1554,12 @@ export const deleteCommunityRoom = asyncHandler(async (req, res) => {
     throw ApiError.forbidden(
       'You do not have permission to delete this community',
     );
+  }
+
+  // Enforce role hierarchy: regular admin/user cannot delete room created by superadmin
+  const delRoomCreator = await User.findById(room.createdBy).select('role');
+  if (delRoomCreator?.role === 'superadmin' && req.user.role !== 'superadmin') {
+    throw ApiError.forbidden('Cannot delete a community room created by Super Admin');
   }
 
   const deletedId = String(room._id);
