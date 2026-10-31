@@ -10,16 +10,23 @@ import featuredRoutes from './featured.routes.js';
 import blogRoutes from './blog.routes.js';
 import communityRoutes from './community.routes.js';
 import tmdbRoutes from './tmdb.routes.js';
+import { getHealthStatusPayload } from '../cron/healthCheck.cron.js';
+import { syncCheck } from '../controller/discover.controller.js';
 
 const r = Router();
 
-r.get('/health', (_req, res) =>
-  res.json({
-    success: true,
-    service: 'movies-hub-api',
-    timestamp: new Date().toISOString(),
-  }),
-);
+r.get('/health', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(getHealthStatusPayload());
+});
+
+r.head('/health', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(200).end();
+});
+
+r.get('/sync-check', syncCheck);
+r.post('/sync-check', syncCheck);
 
 r.use('/auth', authRoutes);
 r.use('/users', userRoutes);

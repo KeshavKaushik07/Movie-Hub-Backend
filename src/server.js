@@ -13,6 +13,10 @@ import {
   startScheduler,
   requestStop,
 } from './services/crawler.service.js';
+import {
+  startHealthCheckCron,
+  stopHealthCheckCron,
+} from './cron/healthCheck.cron.js';
 import logger from './utils/logger.js';
 
 let server;
@@ -33,12 +37,14 @@ const start = async () => {
       startCrawl().catch((e) => logger.warn('Boot crawl skipped:', e.message));
     }
     startScheduler();
+    startHealthCheckCron();
   });
 };
 
 const shutdown = async (signal) => {
   logger.warn(`${signal} received — shutting down gracefully`);
   requestStop();
+  stopHealthCheckCron();
   if (server) server.close();
   await disconnectDB();
   process.exit(0);

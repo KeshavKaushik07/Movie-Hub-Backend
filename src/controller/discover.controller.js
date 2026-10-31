@@ -16,6 +16,11 @@ import {
   getActiveFeaturedHero,
   getHeroSlideLimit,
 } from './featured.controller.js';
+import {
+  evaluateDeltaChanges,
+  getCachedHomeFeed,
+  setCachedHomeFeed,
+} from '../services/sync.service.js';
 
 const imgUrl = (p, size = 'w500') => {
   if (!p) return null;
@@ -384,22 +389,32 @@ export const personDetails = asyncHandler(async (req, res) => {
   const exactNameRegex = safeName ? new RegExp(`^${safeName}$`, 'i') : null;
 
   const orClauses = [];
-  if (exactNameRegex) {
-    orClauses.push(
-      { 'cast.name': exactNameRegex },
-      { 'crew.name': exactNameRegex },
-      { directors: exactNameRegex },
-      { writers: exactNameRegex },
-      { producers: exactNameRegex },
-      { musicDirectors: exactNameRegex },
-    );
-  }
-  if (Number.isInteger(personMeta.id) && personMeta.id > 0) {
-    orClauses.push({ 'cast.id': personMeta.id }, { 'crew.id': personMeta.id });
-  }
   if (synced?.creditPairs?.length) {
-    // Match exact { mediaType, tmdbId } pairs (never bare tmdbId across mismatched mediaTypes)
+    // Strictly match the person's verified TMDB credit pairs + exact person ID + custom titles
     orClauses.push(...synced.creditPairs);
+    if (Number.isInteger(personMeta.id) && personMeta.id > 0) {
+      orClauses.push({ 'cast.id': personMeta.id }, { 'crew.id': personMeta.id });
+    }
+    if (exactNameRegex) {
+      orClauses.push(
+        { isCustom: true, 'cast.name': exactNameRegex },
+        { isCustom: true, directors: exactNameRegex },
+      );
+    }
+  } else {
+    if (Number.isInteger(personMeta.id) && personMeta.id > 0) {
+      orClauses.push({ 'cast.id': personMeta.id }, { 'crew.id': personMeta.id });
+    }
+    if (exactNameRegex) {
+      orClauses.push(
+        { 'cast.name': exactNameRegex },
+        { 'crew.name': exactNameRegex },
+        { directors: exactNameRegex },
+        { writers: exactNameRegex },
+        { producers: exactNameRegex },
+        { musicDirectors: exactNameRegex },
+      );
+    }
   }
 
   let dbDocs = [];
@@ -470,6 +485,15 @@ const interleaveIndustryPools = (pools = []) => {
   return result;
 };
 
+// GET or POST /discover/sync-check -> Selective Delta Revalidation
+export const syncCheck = asyncHandler(async (req, res) => {
+  const payload = await evaluateDeltaChanges({
+    ...(req.query || {}),
+    ...(req.body || {}),
+  });
+  res.json(payload);
+});
+
 // GET /discover/home?region=IN|GLOBAL&industries=...&genres=...
 export const homeFeed = asyncHandler(async (req, res) => {
   const isIndia = String(req.query.region || 'IN').toUpperCase() !== 'GLOBAL';
@@ -481,6 +505,14 @@ export const homeFeed = asyncHandler(async (req, res) => {
     .split(',')
     .map(Number)
     .filter(Number.isFinite);
+
+  const homeCacheKey = `${isIndia ? 'IN' : 'GLOBAL'}:${prefIndustries.join(',')}:${prefGenres.join(',')}`;
+  if (req.query.force !== 'true') {
+    const cachedPayload = getCachedHomeFeed(homeCacheKey);
+    if (cachedPayload) {
+      return res.json(cachedPayload);
+    }
+  }
 
   const upcomingListSpec = LISTS.upcoming();
 
@@ -511,35 +543,35 @@ export const homeFeed = asyncHandler(async (req, res) => {
     getHeroSlideLimit(),
     findTitles(
       { type: 'movie', list: 'upcoming', limit: 24 },
-      { ...upcomingListSpec, listName: 'upcoming' },
+      { ...upcomingListSpec, listName: 'upcoming', skipCount: true },
     ),
     findTitles(
       { type: 'movie', list: 'trending', limit: 45 },
-      { listName: 'trending' },
+      { listName: 'trending', skipCount: true },
     ),
     findTitles(
       { type: 'tv', list: 'trending', limit: 45 },
-      { listName: 'trending' },
+      { listName: 'trending', skipCount: true },
     ),
-    findTitles({ type: 'webseries', limit: 45 }),
+    findTitles({ type: 'webseries', limit: 45 }, { skipCount: true }),
     findTitles(
       { type: 'movie', list: 'popular', limit: 45 },
-      { listName: 'popular' },
+      { listName: 'popular', skipCount: true },
     ),
     findTitles(
       { type: 'movie', list: 'top-rated', limit: 45 },
-      { listName: 'top-rated' },
+      { listName: 'top-rated', skipCount: true },
     ),
-    findTitles({ type: 'movie', industry: 'bollywood', limit: 40 }),
-    findTitles({ type: 'movie', industry: 'tollywood', limit: 40 }),
-    findTitles({ type: 'movie', industry: 'kollywood', limit: 40 }),
-    findTitles({ type: 'movie', industry: 'mollywood', limit: 24 }),
-    findTitles({ type: 'movie', industry: 'sandalwood', limit: 24 }),
-    findTitles({ type: 'movie', industry: 'hollywood', limit: 45 }),
-    findTitles({ industry: 'korean', limit: 36 }),
-    findTitles({ industry: 'japanese', limit: 24 }),
-    findTitles({ ott: 'netflix', limit: 45 }),
-    findTitles({ ott: 'prime', limit: 45 }),
+    findTitles({ type: 'movie', industry: 'bollywood', limit: 40 }, { skipCount: true }),
+    findTitles({ type: 'movie', industry: 'tollywood', limit: 40 }, { skipCount: true }),
+    findTitles({ type: 'movie', industry: 'kollywood', limit: 40 }, { skipCount: true }),
+    findTitles({ type: 'movie', industry: 'mollywood', limit: 24 }, { skipCount: true }),
+    findTitles({ type: 'movie', industry: 'sandalwood', limit: 24 }, { skipCount: true }),
+    findTitles({ type: 'movie', industry: 'hollywood', limit: 45 }, { skipCount: true }),
+    findTitles({ industry: 'korean', limit: 36 }, { skipCount: true }),
+    findTitles({ industry: 'japanese', limit: 24 }, { skipCount: true }),
+    findTitles({ ott: 'netflix', limit: 45 }, { skipCount: true }),
+    findTitles({ ott: 'prime', limit: 45 }, { skipCount: true }),
     Title.find({ siteReviewCount: { $gt: 0 } })
       .sort({ siteRating: -1, siteReviewCount: -1 })
       .limit(12)
@@ -895,8 +927,9 @@ export const homeFeed = asyncHandler(async (req, res) => {
     return Number.isFinite(dMs) && dMs > nowMs;
   });
 
-  res.json({
+  const responsePayload = {
     success: true,
+    syncedAt: Date.now(),
     region: isIndia ? 'IN' : 'GLOBAL',
     currency: isIndia ? 'INR' : 'USD',
     heroLimit: targetHeroCount,
@@ -931,7 +964,9 @@ export const homeFeed = asyncHandler(async (req, res) => {
       authorName: b.author?.name || b.authorName || 'Movies Hub Editorial',
     })),
     rows: deduplicatedRows,
-  });
+  };
+  setCachedHomeFeed(homeCacheKey, responsePayload);
+  res.json(responsePayload);
 });
 
 export const genres = asyncHandler(async (req, res) => {

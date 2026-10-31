@@ -4,6 +4,8 @@ import * as c from '../controller/discover.controller.js';
 const router = Router();
 router.get('/', c.browse);
 router.get('/home', c.homeFeed);
+router.get('/sync-check', c.syncCheck);
+router.post('/sync-check', c.syncCheck);
 router.get('/search', c.search);
 router.get('/celebrities', c.celebrities);
 router.get('/person', c.personDetails);

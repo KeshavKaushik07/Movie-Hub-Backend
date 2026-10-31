@@ -1,3 +1,4 @@
+import { markDataChanged } from '../services/sync.service.js';
 import Featured from '../models/Featured.js';
 import Title from '../models/Title.js';
 import CrawlJob from '../models/CrawlJob.js';
@@ -151,6 +152,7 @@ export const listAdminFeatured = asyncHandler(async (_req, res) => {
 export const updateHeroConfig = asyncHandler(async (req, res) => {
   const rawLimit = req.body.heroLimit ?? req.body.maxSlides ?? req.body.limit;
   const heroLimit = await setHeroSlideLimit(rawLimit);
+  markDataChanged({ structural: true });
   res.json({
     success: true,
     message: `Home Hero Carousel slide count updated to ${heroLimit}`,
@@ -233,6 +235,7 @@ export const addFeaturedItem = asyncHandler(async (req, res) => {
   const currentLimit = await getHeroSlideLimit();
   const nextHeroLimit = activeCount > currentLimit ? await setHeroSlideLimit(activeCount) : currentLimit;
 
+  markDataChanged({ structural: true });
   const [hydrated] = await hydrateFeaturedItems([featuredDoc]);
   res.status(201).json({
     success: true,
@@ -270,6 +273,7 @@ export const updateFeaturedItem = asyncHandler(async (req, res) => {
   if (req.body.expiresAt !== undefined) doc.expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
 
   await doc.save();
+  markDataChanged({ structural: true });
   const [hydrated] = await hydrateFeaturedItems([doc.toObject()]);
   res.json({
     success: true,
@@ -292,6 +296,7 @@ export const reorderFeaturedItems = asyncHandler(async (req, res) => {
     },
   }));
   await Featured.bulkWrite(ops);
+  markDataChanged({ structural: true });
 
   const docs = await Featured.find().sort({ order: 1, createdAt: -1 }).lean();
   const items = await hydrateFeaturedItems(docs);
@@ -305,6 +310,7 @@ export const reorderFeaturedItems = asyncHandler(async (req, res) => {
 // Admin & SuperAdmin: DELETE /api/v1/featured/:id
 export const removeFeaturedItem = asyncHandler(async (req, res) => {
   const doc = await Featured.findByIdAndDelete(req.params.id);
+  markDataChanged({ structural: true });
   if (!doc) throw ApiError.notFound('Featured item not found');
   res.json({
     success: true,

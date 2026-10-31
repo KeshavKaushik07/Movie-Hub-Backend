@@ -10,7 +10,12 @@ const limiter = (limit, extra = {}) =>
     ...extra,
   });
 
-export const apiLimiter = limiter(1500); // generous rate limit for rich UI tabs & admin dashboards
+export const apiLimiter = limiter(1500, {
+  skip: (req) =>
+    req.path === '/health' ||
+    req.path === '/sync-check' ||
+    req.path === '/discover/sync-check',
+}); // generous rate limit; health keep-alive cron & delta sync-check bypass limiter
 export const authLimiter = limiter(30, { skipSuccessfulRequests: true });
 
 const XSS_PATTERNS = [

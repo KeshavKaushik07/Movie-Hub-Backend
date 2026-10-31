@@ -1,3 +1,4 @@
+import { markDataChanged } from '../services/sync.service.js';
 import mongoose from 'mongoose';
 import Blog from '../models/Blog.js';
 import BlogComment from '../models/BlogComment.js';
@@ -345,6 +346,7 @@ export const createBlog = asyncHandler(async (req, res) => {
   });
 
   await blog.populate('author', 'name avatarColor role');
+  markDataChanged();
   res.status(201).json({
     success: true,
     message: 'Blog article created',
@@ -435,6 +437,7 @@ export const updateBlog = asyncHandler(async (req, res) => {
   await blog.save();
   await blog.populate('author', 'name avatarColor role');
 
+  markDataChanged();
   res.json({
     success: true,
     message: 'Blog article updated',
@@ -450,6 +453,7 @@ export const deleteBlog = asyncHandler(async (req, res) => {
   const blog = await Blog.findByIdAndDelete(req.params.id);
   if (!blog) throw ApiError.notFound('Blog article not found');
   await BlogComment.deleteMany({ blog: blog._id });
+  markDataChanged({ structural: true });
   res.json({
     success: true,
     message: 'Blog article and its comments deleted',

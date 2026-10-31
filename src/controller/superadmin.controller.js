@@ -1,3 +1,4 @@
+import { markDataChanged } from '../services/sync.service.js';
 import ApiKey from '../models/ApiKey.js';
 import Title from '../models/Title.js';
 import User from '../models/User.js';
@@ -303,6 +304,7 @@ export const createCustomTitle = asyncHandler(async (req, res) => {
     lastEditedAt: new Date(),
   });
 
+  markDataChanged();
   res.status(201).json({ title: shapeDetail(doc) });
 });
 
@@ -516,6 +518,7 @@ export const updateTitleDetails = asyncHandler(async (req, res) => {
     { $set: updates },
     { new: true },
   );
+  markDataChanged();
   res.json({ title: shapeDetail(doc), message: 'Title updated in MongoDB' });
 });
 
@@ -545,6 +548,7 @@ export const syncTitleFromTmdb = asyncHandler(async (req, res) => {
     resetOverrides: unlockAll,
   });
 
+  markDataChanged();
   res.json({
     title: shapeDetail(doc),
     message:
@@ -562,6 +566,7 @@ export const deleteTitleFromDb = asyncHandler(async (req, res) => {
     Review.deleteMany({ type: mediaType, tmdbId }),
     Comment.deleteMany({ type: mediaType, tmdbId }),
   ]);
+  markDataChanged({ structural: true });
   res.status(204).end();
 });
 
@@ -622,6 +627,7 @@ export const deleteKey = asyncHandler(async (req, res) => {
   if (!(await ApiKey.findByIdAndDelete(req.params.id)))
     throw ApiError.notFound('API key not found');
   refreshKeyCache();
+  markDataChanged({ structural: true });
   res.status(204).end();
 });
 

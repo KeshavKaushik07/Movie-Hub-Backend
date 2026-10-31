@@ -8,8 +8,11 @@ import { getOrFetchTitle, getOrFetchSeason, shapeDetail, shapeTitle } from '../s
  * Computes genuinely distinct, relevant similar titles for a given movie/series
  * by combining multi-genre intersection count, language/industry match, director/cast overlap,
  * release era proximity, and a deterministic per-title seed so every movie gets unique recommendations.
+ * Bounded with `$sort: { popularity: -1 }, $limit: 350` before `$addFields` so MongoDB uses indexes
+ * instead of scanning the entire 100k collection on every detail load.
  */
-const findDistinctSimilarTitles = async (doc, limit = 18) => {
+export const findDistinctSimilarTitles = async (doc, limit = 18) => {
+  if (!doc) return [];
   const type = doc.mediaType || 'movie';
   const tmdbId = doc.tmdbId;
   const genres = Array.isArray(doc.genreIds) ? doc.genreIds : [];
@@ -35,6 +38,8 @@ const findDistinctSimilarTitles = async (doc, limit = 18) => {
 
   const docs = await Title.aggregate([
     { $match: matchStage },
+    { $sort: { popularity: -1 } },
+    { $limit: 350 },
     {
       $addFields: {
         genreOverlap: {

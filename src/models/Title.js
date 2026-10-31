@@ -186,6 +186,7 @@ const titleSchema = new mongoose.Schema(
 
 titleSchema.index({ mediaType: 1, tmdbId: 1 }, { unique: true });
 titleSchema.index({ title: 'text', originalTitle: 'text', tagline: 'text' }, { weights: { title: 10, originalTitle: 4, tagline: 2 }, name: 'title_text' });
+titleSchema.index({ updatedAt: -1 });
 titleSchema.index({ mediaType: 1, popularity: -1 });
 titleSchema.index({ subType: 1, popularity: -1 });
 titleSchema.index({ isWebSeries: 1, popularity: -1 });
