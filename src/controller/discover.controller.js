@@ -40,92 +40,12 @@ const CURATED_CELEBRITIES = {
       profilePath: '/tCEppfUu0g2dM07623sA34w22i3.jpg',
     },
     {
-      id: 108210,
-      name: 'Allu Arjun',
-      department: 'Acting',
-      industry: 'Tollywood',
-      knownFor: 'Pushpa: The Rise • Ala Vaikunthapurramuloo',
-      profilePath: '/7fa3K2a8F9f91C1hI2bYqE4L6nU.jpg',
-    },
-    {
       id: 85034,
       name: 'Ranbir Kapoor',
       department: 'Acting',
       industry: 'Bollywood',
       knownFor: 'Animal • Barfi! • Rockstar',
       profilePath: '/ymYNHV9luwgyrw17NXHqbOWTQkg.jpg',
-    },
-    {
-      id: 237055,
-      name: 'Prabhas',
-      department: 'Acting',
-      industry: 'Tollywood',
-      knownFor: 'Baahubali • Kalki 2898 AD • Salaar',
-      profilePath: '/6Su5357322T7nC2g27l7n7f3Z3E.jpg',
-    },
-    {
-      id: 85883,
-      name: 'Deepika Padukone',
-      department: 'Acting',
-      industry: 'Bollywood',
-      knownFor: 'Padmaavat • Piku • Kalki 2898 AD',
-      profilePath: '/sXg0ec4wR3u20h2I3V2W017O8nS.jpg',
-    },
-    {
-      id: 86220,
-      name: 'Manoj Bajpayee',
-      department: 'Acting',
-      industry: 'Bollywood / OTT',
-      knownFor: 'The Family Man • Gangs of Wasseypur',
-      profilePath: '/f5D5c2H8r6V02F0eF3B52A0qY8j.jpg',
-    },
-    {
-      id: 91555,
-      name: 'Rajinikanth',
-      department: 'Acting',
-      industry: 'Kollywood',
-      knownFor: 'Jailer • Enthiran • Sivaji',
-      profilePath: '/c5W8zF4H8L6V2E0R3B52A0qY8j.jpg',
-    },
-    {
-      id: 147023,
-      name: 'Alia Bhatt',
-      department: 'Acting',
-      industry: 'Bollywood',
-      knownFor: 'Gangubai Kathiawadi • Raazi • RRR',
-      profilePath: '/RBnT3N8M2H8r6V02F0eF3B52A0.jpg',
-    },
-    {
-      id: 148361,
-      name: 'Fahadh Faasil',
-      department: 'Acting',
-      industry: 'Mollywood',
-      knownFor: 'Aavesham • Vikram • Kumbalangi Nights',
-      profilePath: '/efM8zF4H8L6V2E0R3B52A0qY8j.jpg',
-    },
-    {
-      id: 583940,
-      name: 'Samantha Ruth Prabhu',
-      department: 'Acting',
-      industry: 'Tollywood / OTT',
-      knownFor: 'The Family Man • Citadel: Honey Bunny • Eega',
-      profilePath: '/sM8zF4H8L6V2E0R3B52A0qY8j.jpg',
-    },
-    {
-      id: 116924,
-      name: 'S. S. Rajamouli',
-      department: 'Directing',
-      industry: 'Tollywood',
-      knownFor: 'RRR • Baahubali 2 • Eega',
-      profilePath: '/rM8zF4H8L6V2E0R3B52A0qY8j.jpg',
-    },
-    {
-      id: 85675,
-      name: 'Aamir Khan',
-      department: 'Acting',
-      industry: 'Bollywood',
-      knownFor: 'Dangal • 3 Idiots • Lagaan',
-      profilePath: '/aM8zF4H8L6V2E0R3B52A0qY8j.jpg',
     },
   ],
   GLOBAL: [
@@ -166,7 +86,7 @@ const CURATED_CELEBRITIES = {
       name: 'Zendaya',
       department: 'Acting',
       industry: 'Hollywood',
-      knownFor: 'Dune: Part Two • Euphoria • Spider-Man',
+      knownFor: 'Dune: Part Two • Challengers • Spider-Man',
       profilePath: '/3WdOloHpjtjL96uVOhFRRCcYSwq.jpg',
     },
     {
@@ -186,12 +106,44 @@ const CURATED_CELEBRITIES = {
       profilePath: '/euDPyqLnuwaWMHajcU3oZ9uZezR.jpg',
     },
     {
-      id: 73249,
-      name: 'Lee Jung-jae',
+      id: 1245,
+      name: 'Scarlett Johansson',
       department: 'Acting',
-      industry: 'Korean',
-      knownFor: 'Squid Game • Hunt • New World',
-      profilePath: '/3h5C2H8r6V02F0eF3B52A0qY8j.jpg',
+      industry: 'Hollywood',
+      knownFor: 'Avengers: Endgame • Black Widow • Marriage Story',
+      profilePath: '/6NsMbJXRlDZuDzatN2akFdGuTvx.jpg',
+    },
+    {
+      id: 500,
+      name: 'Tom Cruise',
+      department: 'Acting',
+      industry: 'Hollywood',
+      knownFor: 'Top Gun: Maverick • Mission: Impossible • Edge of Tomorrow',
+      profilePath: '/8qBylBsQf4llkGrWR3qAsOtOU8O.jpg',
+    },
+    {
+      id: 287,
+      name: 'Brad Pitt',
+      department: 'Acting',
+      industry: 'Hollywood',
+      knownFor: 'Fight Club • Once Upon a Time in Hollywood • Se7en',
+      profilePath: '/cckcYc2v0yh1tc9QjRelptcOBko.jpg',
+    },
+    {
+      id: 3894,
+      name: 'Christian Bale',
+      department: 'Acting',
+      industry: 'Hollywood',
+      knownFor: 'The Dark Knight • Ford v Ferrari • The Prestige',
+      profilePath: '/qCpZn2e3dimwbryLnqxZuI88PTi.jpg',
+    },
+    {
+      id: 54693,
+      name: 'Emma Stone',
+      department: 'Acting',
+      industry: 'Hollywood',
+      knownFor: 'Poor Things • La La Land • Cruella',
+      profilePath: '/cZ8a3QvAnj2cgcgVL6g4XaqPzpL.jpg',
     },
   ],
 };
@@ -275,16 +227,17 @@ const buildRegionalCelebrities = async (region = 'IN') => {
   const isIndia = String(region).toUpperCase() !== 'GLOBAL';
   const regionFilter = isIndia
     ? { originalLanguage: { $in: ['hi', 'te', 'ta', 'ml', 'kn'] } }
-    : { originalLanguage: { $in: ['en', 'ko', 'ja', 'es', 'fr'] } };
+    : { originalLanguage: 'en' };
 
   const agg = await Title.aggregate([
     { $match: { ...regionFilter, 'cast.0': { $exists: true } } },
     { $sort: { popularity: -1 } },
-    { $limit: 120 },
+    { $limit: 160 },
     { $unwind: '$cast' },
     {
       $match: {
         'cast.name': { $exists: true, $ne: '' },
+        'cast.profilePath': { $exists: true, $nin: [null, ''] },
         'cast.order': { $lte: 4 },
       },
     },
@@ -299,17 +252,18 @@ const buildRegionalCelebrities = async (region = 'IN') => {
       },
     },
     { $sort: { count: -1 } },
-    { $limit: 14 },
+    { $limit: 16 },
   ]).catch(() => []);
 
   const map = new Map();
   for (const item of agg) {
+    if (!item.profilePath) continue;
     map.set(item._id.toLowerCase(), {
       id: item.tmdbId || null,
       name: item._id,
       gender: item.gender || 0,
       department: 'Acting',
-      industry: isIndia ? 'Indian Cinema' : 'Global Cinema',
+      industry: isIndia ? 'Indian Cinema' : 'Hollywood',
       knownFor: (item.sampleTitles || []).slice(0, 3).join(' • '),
       profileUrl: imgUrl(item.profilePath, 'w342'),
       titlesCount: item.count,
@@ -537,7 +491,8 @@ export const homeFeed = asyncHandler(async (req, res) => {
     primeShows,
     communityTop,
     latestBlogs,
-    regionalCelebs,
+    indianCelebs,
+    hollywoodCelebs,
   ] = await Promise.all([
     getActiveFeaturedHero(),
     getHeroSlideLimit(),
@@ -581,7 +536,8 @@ export const homeFeed = asyncHandler(async (req, res) => {
       .sort({ isPinned: -1, isFeatured: -1, publishedAt: -1 })
       .limit(6)
       .lean(),
-    buildRegionalCelebrities(isIndia ? 'IN' : 'GLOBAL'),
+    buildRegionalCelebrities('IN'),
+    buildRegionalCelebrities('GLOBAL'),
   ]);
 
   // Personalized row based on user's saved preferences (from onboarding modal or DB profile)
@@ -946,7 +902,9 @@ export const homeFeed = asyncHandler(async (req, res) => {
     },
     top10Today,
     top10Week,
-    celebrities: regionalCelebs,
+    celebrities: isIndia ? indianCelebs : hollywoodCelebs,
+    indianCelebrities: indianCelebs,
+    hollywoodCelebrities: hollywoodCelebs,
     blogs: latestBlogs.map((b) => ({
       id: String(b._id),
       title: b.title,

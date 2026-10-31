@@ -79,8 +79,8 @@ export const findDistinctSimilarTitles = async (doc, limit = 18) => {
 
 // GET /titles/:type/:tmdbId -> full details (served from MongoDB if present; fetched from TMDB + stored in MongoDB if not!)
 export const getTitle = asyncHandler(async (req, res) => {
-  const { type, tmdbId, slug } = parseTitle(req);
-  const doc = await getOrFetchTitle(type, tmdbId || slug, { details: true });
+  const { type, tmdbId, slug, explicitById } = parseTitle(req);
+  const doc = await getOrFetchTitle(type, tmdbId || slug, { details: true, explicitById });
   const resolvedType = doc.mediaType || type;
   const resolvedId = doc.tmdbId;
 
@@ -113,8 +113,8 @@ export const getTitle = asyncHandler(async (req, res) => {
 
 // GET /titles/:type/:tmdbId/similar
 export const similarTitles = asyncHandler(async (req, res) => {
-  const { type, tmdbId, slug } = parseTitle(req);
-  const doc = await getOrFetchTitle(type, tmdbId || slug);
+  const { type, tmdbId, slug, explicitById } = parseTitle(req);
+  const doc = await getOrFetchTitle(type, tmdbId || slug, { explicitById });
   const shaped = await findDistinctSimilarTitles(doc, 20);
   res.json({ items: shaped, results: shaped });
 });

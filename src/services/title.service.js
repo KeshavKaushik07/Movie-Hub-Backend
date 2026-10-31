@@ -915,111 +915,51 @@ const KEY_CREW_JOBS = new Set([
  * on each credited document in MongoDB so that every returned movie or series is guaranteed to
  * show that person in its Cast & Crew!
  */
-// Canonical TMDB Person IDs for major Indian & Global stars to prevent homonym collisions
-// (e.g. Bollywood's Akshay Kumar [35070] vs British stage actor "Akshay Kumar")
-export const KNOWN_CELEBRITY_TMDB_IDS = {
-  'akshay kumar': 35070,
-  'shah rukh khan': 35742,
-  'srk': 35742,
-  'salman khan': 42802,
-  'aamir khan': 85675,
-  'amitabh bachchan': 35780,
-  'hrithik roshan': 78749,
-  'ajay devgn': 42803,
-  'ranbir kapoor': 85034,
-  'ranveer singh': 224228,
-  'shahid kapoor': 85046,
-  'saif ali khan': 35770,
-  'sanjay dutt': 35737,
-  'sunny deol': 85584,
-  'anil kapoor': 6217,
-  'john abraham': 35779,
-  'varun dhawan': 1108118,
-  'kartik aaryan': 1096752,
-  'vicky kaushal': 1488792,
-  'ayushmann khurrana': 1033151,
-  'rajkummar rao': 990072,
-  'manoj bajpayee': 86220,
-  'pankaj tripathi': 1131036,
-  'nawazuddin siddiqui': 85655,
-  'irrfan khan': 76793,
-  'tiger shroff': 1335818,
-  'sidharth malhotra': 1095515,
-  'allu arjun': 108210,
-  'prabhas': 237055,
-  'ram charan': 147021,
-  'jr ntr': 148037,
-  'n t rama rao jr': 148037,
-  'mahesh babu': 116925,
-  'nani': 225312,
-  'vijay deverakonda': 1508709,
-  'rajinikanth': 91555,
-  'kamal haasan': 93193,
-  'vijay': 91559,
-  'thalapathy vijay': 91559,
-  'ajith kumar': 91547,
-  'suriya': 85720,
-  'dhanush': 550165,
-  'vikram': 93191,
-  'vijay sethupathi': 1123766,
-  'karthi': 222176,
-  'sivakarthikeyan': 1124692,
-  'fahadh faasil': 148361,
-  'mohanlal': 82732,
-  'mammootty': 111602,
-  'dulquer salmaan': 1091324,
-  'prithviraj sukumaran': 111675,
-  'tovino thomas': 1332964,
-  'yash': 1337010,
-  'shiva rajkumar': 584624,
-  'rishab shetty': 1643535,
-  'rakshit shetty': 1301301,
-  'sudeep': 237046,
-  'darshan': 1116414,
-  'deepika padukone': 85883,
-  'alia bhatt': 147023,
-  'priyanka chopra': 77234,
-  'katrina kaif': 35773,
-  'kareena kapoor': 35740,
-  'kareena kapoor khan': 35740,
-  'anushka sharma': 85881,
-  'shraddha kapoor': 587753,
-  'kriti sanon': 1309919,
-  'kiara advani': 1340978,
-  'taapsee pannu': 587756,
-  'vidya balan': 35784,
-  'kangana ranaut': 85588,
-  'tabu': 35782,
-  'kajol': 35743,
-  'madhuri dixit': 35781,
-  'aishwarya rai': 35745,
-  'aishwarya rai bachchan': 35745,
-  'samantha ruth prabhu': 583940,
-  'samantha': 583940,
-  'rashmika mandanna': 1752056,
-  'nayanthara': 91550,
-  'trisha krishnan': 91565,
-  'sai pallavi': 1476792,
-  'pooja hegde': 1123764,
-  'tamannaah bhatia': 85721,
-  'kajal aggarwal': 146972,
-  'mrunal thakur': 1670549,
-  'triptii dimri': 1899513,
-  's s rajamouli': 116924,
-  'rajkumar hirani': 85673,
-  'sanjay leela bhansali': 35775,
-  'anurag kashyap': 85662,
-  'rohit shetty': 85589,
-  'karan johar': 35741,
-  'lokesh kanagaraj': 1765065,
-  'atlee': 1267910,
-  'prashanth neel': 1337011,
-  'sandeep reddy vanga': 1848055,
-  'mani ratnam': 85595,
-  'vetrimaaran': 584776,
+const INDIAN_LANGS_SET = new Set(['hi', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'pa', 'gu', 'ur']);
+
+const normalizePersonNameForMatch = (s = '') =>
+  String(s || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const namesMatch = (a, b, alsoKnownAs = []) => {
+  const na = normalizePersonNameForMatch(a);
+  const nb = normalizePersonNameForMatch(b);
+  if (!na || !nb) return false;
+  if (na === nb || na.replace(/\s+/g, '') === nb.replace(/\s+/g, '')) return true;
+  const wordsA = na.split(' ').filter((w) => w.length > 1);
+  const wordsB = nb.split(' ').filter((w) => w.length > 1);
+  if (wordsA.length >= 1 && wordsB.length >= 1) {
+    if (wordsA.every((w) => wordsB.includes(w)) || wordsB.every((w) => wordsA.includes(w))) {
+      return true;
+    }
+  }
+  for (const alias of alsoKnownAs || []) {
+    const nAlias = normalizePersonNameForMatch(alias);
+    if (nAlias && (nAlias === na || nAlias.replace(/\s+/g, '') === na.replace(/\s+/g, ''))) {
+      return true;
+    }
+  }
+  return false;
 };
 
-const INDIAN_LANGS_SET = new Set(['hi', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'pa', 'gu', 'ur']);
+const rankPersonCandidate = (p) => {
+  const pop = Number(p?.popularity) || 0;
+  const knownVotes = (p?.known_for || []).reduce(
+    (sum, k) => sum + (Number(k?.vote_count) || 0),
+    0,
+  );
+  const knownPop = (p?.known_for || []).reduce(
+    (sum, k) => sum + (Number(k?.popularity) || 0),
+    0,
+  );
+  const hasPhoto = p?.profile_path ? 40 : 0;
+  return pop * 25 + knownVotes / 8 + knownPop * 2 + hasPhoto;
+};
 
 export async function syncPersonCreditsToMongo({
   name = '',
@@ -1027,17 +967,9 @@ export async function syncPersonCreditsToMongo({
   fromSearch = false,
 } = {}) {
   const cleanName = String(name || '').trim();
-  const normQueryName = cleanName
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  // If the name matches a known celebrity in KNOWN_CELEBRITY_TMDB_IDS, always prefer their canonical TMDB ID
-  const canonicalKnownId = KNOWN_CELEBRITY_TMDB_IDS[normQueryName] || null;
+  const normQueryName = normalizePersonNameForMatch(cleanName);
   let tmdbPersonId =
-    canonicalKnownId ||
-    (Number.isInteger(Number(id)) && Number(id) > 0 ? Number(id) : null);
+    Number.isInteger(Number(id)) && Number(id) > 0 ? Number(id) : null;
 
   let personMeta = {
     id: tmdbPersonId,
@@ -1053,7 +985,27 @@ export async function syncPersonCreditsToMongo({
   };
 
   try {
-    if (!tmdbPersonId && cleanName.length >= 2) {
+    let pData = null;
+
+    // 1. If an ID was passed, fetch `/person/:id` AND verify its name actually matches `cleanName`!
+    //    If `id` belongs to a different person (e.g. a stale/wrong ID), discard it and search by name!
+    if (tmdbPersonId) {
+      pData = await tmdbGet(`/person/${tmdbPersonId}`, {
+        append_to_response: 'combined_credits',
+      }).catch(() => null);
+
+      if (
+        pData &&
+        cleanName.length >= 2 &&
+        !namesMatch(cleanName, pData.name, pData.also_known_as)
+      ) {
+        pData = null;
+        tmdbPersonId = null;
+      }
+    }
+
+    // 2. Search by name on TMDB and sort candidates by popularity + known_for vote counts
+    if (!pData && cleanName.length >= 2) {
       const searchRes = await tmdbGet('/search/person', {
         query: cleanName,
         page: 1,
@@ -1062,54 +1014,27 @@ export async function syncPersonCreditsToMongo({
       const rawCandidates = searchRes?.results || [];
       if (!rawCandidates.length) return null;
 
-      // Rank candidates by popularity + known_for vote counts + profile photo so famous stars
-      // ALWAYS beat obscure homonym actors with the same name!
-      const rankCandidate = (p) => {
-        const pop = Number(p.popularity) || 0;
-        const knownVotes = (p.known_for || []).reduce(
-          (sum, k) => sum + (Number(k?.vote_count) || 0),
-          0,
-        );
-        const knownPop = (p.known_for || []).reduce(
-          (sum, k) => sum + (Number(k?.popularity) || 0),
-          0,
-        );
-        const hasPhoto = p.profile_path ? 40 : 0;
-        return pop * 25 + knownVotes / 8 + knownPop * 2 + hasPhoto;
-      };
-
       const candidates = [...rawCandidates].sort(
-        (a, b) => rankCandidate(b) - rankCandidate(a),
+        (a, b) => rankPersonCandidate(b) - rankPersonCandidate(a),
       );
 
-      const normQ = normQueryName;
-      const normQCompact = normQ.replace(/\s+/g, '');
-
-      // Pick highest-ranked exact name match first, then highest-ranked partial match
+      const normQCompact = normQueryName.replace(/\s+/g, '');
       const exactMatches = candidates.filter((p) => {
-        const n = String(p.name || '')
-          .toLowerCase()
-          .replace(/[^a-z0-9\s]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-        return n === normQ || n.replace(/\s+/g, '') === normQCompact;
+        const n = normalizePersonNameForMatch(p.name);
+        return n === normQueryName || n.replace(/\s+/g, '') === normQCompact;
       });
 
       const best =
         exactMatches[0] ||
         candidates.find((p) => {
-          const n = String(p.name || '')
-            .toLowerCase()
-            .replace(/[^a-z0-9\s]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
+          const n = normalizePersonNameForMatch(p.name);
           const words = n.split(/\s+/);
           return (
-            normQ.length >= 3 &&
-            (n.startsWith(normQ) ||
-              n.endsWith(normQ) ||
-              words.includes(normQ) ||
-              normQ.includes(n)) &&
+            normQueryName.length >= 3 &&
+            (n.startsWith(normQueryName) ||
+              n.endsWith(normQueryName) ||
+              words.includes(normQueryName) ||
+              normQueryName.includes(n)) &&
             (p.popularity || 0) >= 1.2
           );
         }) ||
@@ -1117,33 +1042,16 @@ export async function syncPersonCreditsToMongo({
 
       if (!best) return null;
 
-      tmdbPersonId = KNOWN_CELEBRITY_TMDB_IDS[
-        String(best.name || '')
-          .toLowerCase()
-          .replace(/[^a-z0-9\s]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim()
-      ] || best.id;
-
-      personMeta.id = tmdbPersonId;
-      personMeta.name = best.name || personMeta.name;
-      personMeta.knownForDepartment = best.known_for_department || 'Acting';
-      if (best.gender) personMeta.gender = best.gender;
-      personMeta.popularity = Number(best.popularity) || 0;
-      if (best.profile_path) {
-        personMeta.profilePath = best.profile_path;
-        personMeta.profileUrl = img(best.profile_path, 'w500');
-      }
+      tmdbPersonId = best.id;
+      pData = await tmdbGet(`/person/${tmdbPersonId}`, {
+        append_to_response: 'combined_credits',
+      });
     }
 
-    if (!tmdbPersonId) return null;
-
-    const pData = await tmdbGet(`/person/${tmdbPersonId}`, {
-      append_to_response: 'combined_credits',
-    });
     if (!pData) return null;
 
     personMeta.id = pData.id || tmdbPersonId;
+    // Keep display name consistent with the matched person
     personMeta.name = pData.name || personMeta.name;
     personMeta.knownForDepartment =
       pData.known_for_department || personMeta.knownForDepartment;
@@ -1165,18 +1073,16 @@ export async function syncPersonCreditsToMongo({
         INDIAN_LANGS_SET.has(String(c.original_language || '').toLowerCase()),
     ).length;
     const isIndianStar =
-      indianMovieCount >= 5 ||
-      /india|mumbai|delhi|punjab|chennai|hyderabad|kerala|bangalore|bengaluru|kolkata/i.test(
+      indianMovieCount >= 4 ||
+      /india|mumbai|delhi|punjab|chennai|hyderabad|kerala|bangalore|bengaluru|kolkata|amritsar|madras/i.test(
         personMeta.placeOfBirth || '',
-      ) ||
-      Boolean(KNOWN_CELEBRITY_TMDB_IDS[normQueryName]);
+      );
 
     // Filter out non-acting talk show / news / reality / archive-footage / self appearances
     const rawCastCredits = allRawCast.filter((c) => {
       if (!c || !c.id || !(c.title || c.name) || c.adult) return false;
       if (!['movie', 'tv'].includes(c.media_type)) return false;
       const gIds = c.genre_ids || [];
-      // Exclude Talk (10767), News (10763), Reality (10764), Soap (10766), Documentary (99)
       if (
         gIds.includes(10767) ||
         gIds.includes(10763) ||
@@ -1187,7 +1093,6 @@ export async function syncPersonCreditsToMongo({
         return false;
       }
       const charStr = String(c.character || '').trim();
-      // Exclude archive footage, uncredited extras, or "Self / Himself / Herself / Guest / Host" appearances
       if (
         /\b(archive footage|archive|uncredited|himself|herself|self|guest|host|contestant|judge|narrator|presenter|award)\b/i.test(
           charStr,
@@ -1195,13 +1100,11 @@ export async function syncPersonCreditsToMongo({
       ) {
         return false;
       }
-      // For TV / Web Series: require a real character role and genuine main/recurring cast billing
       if (c.media_type === 'tv') {
         if (!charStr) return false;
         const epCount = Number(c.episode_count || 0);
         const order = c.order ?? 99;
         if (epCount <= 1 && order > 4) return false;
-        // If this is an Indian cinema star, exclude random non-Indian TV shows where they only had a 1-episode credit
         const lang = String(c.original_language || '').toLowerCase();
         if (isIndianStar && !INDIAN_LANGS_SET.has(lang) && epCount < 3) {
           return false;
@@ -1225,7 +1128,6 @@ export async function syncPersonCreditsToMongo({
       return KEY_CREW_JOBS.has(c.job);
     });
 
-    // Deduplicate and score credits by popularity & votes so the actor's genuine movies/series rank top
     const scoreCredit = (c) =>
       (Number(c.popularity) || 0) * 2 + (Number(c.vote_count) || 0) / 50;
     const creditMap = new Map();
@@ -1254,7 +1156,6 @@ export async function syncPersonCreditsToMongo({
     rawCrewCredits.forEach((c) => {
       const key = `${c.media_type}:${c.id}`;
       const existing = creditMap.get(key);
-      // For predominantly acting stars (25+ acting movies), don't pollute their acting filmography with producer-only credits unless they also acted/directed
       if (
         !existing &&
         personMeta.knownForDepartment === 'Acting' &&
@@ -1295,7 +1196,7 @@ export async function syncPersonCreditsToMongo({
       .slice(0, 30);
     const selectedEntries = [...movieEntries, ...tvEntries];
 
-    // Clean up any previously polluted homonym cast/crew entries in MongoDB (e.g. from a different actor with the same name)
+    // Clean up any previously polluted homonym cast/crew entries in MongoDB
     const safePersonName = String(personMeta.name || cleanName).replace(
       /[.*+?^${}()|[\]\\]/g,
       '\\$&',
@@ -1350,7 +1251,6 @@ export async function syncPersonCreditsToMongo({
       tmdbId: e.tmdbId,
     }));
 
-    // Fetch existing docs for these creditPairs and explicitly ensure personMeta is present in cast/crew
     const existingDocs = await Title.find({ $or: creditPairs })
       .select(
         'mediaType tmdbId cast crew directors writers producers musicDirectors',
@@ -1400,7 +1300,7 @@ export async function syncPersonCreditsToMongo({
               name: personMeta.name,
               character: existingCastMember.character || entry.character || '',
               profilePath:
-                 personMeta.profilePath ||
+                personMeta.profilePath ||
                 existingCastMember.profilePath ||
                 null,
               gender: personMeta.gender || existingCastMember.gender || 0,
@@ -1566,28 +1466,46 @@ async function resolveTitleBySlug(normalizedType, rawSlug) {
 export async function getOrFetchTitle(
   type,
   tmdbIdOrSlug,
-  { details = false, forceRefresh = false, resetOverrides = false } = {},
+  { details = false, forceRefresh = false, resetOverrides = false, explicitById = false } = {},
 ) {
   const rawTypeStr = String(type || 'movie').toLowerCase().trim();
   let normalizedType = ['webseries', 'web-series', 'tv', 'tv-show', 'tv-shows', 'tv-series', 'series'].includes(rawTypeStr)
     ? 'tv'
     : 'movie';
-  let numericId = Number(tmdbIdOrSlug);
+  const rawParamStr = String(tmdbIdOrSlug || '').trim();
+  let numericId = Number(rawParamStr);
   let doc = null;
 
   if (
     !Number.isInteger(numericId) ||
     numericId <= 0 ||
-    !/^\d+$/.test(String(tmdbIdOrSlug).trim())
+    !/^\d+$/.test(rawParamStr)
   ) {
-    doc = await resolveTitleBySlug(normalizedType, String(tmdbIdOrSlug));
+    doc = await resolveTitleBySlug(normalizedType, rawParamStr);
     if (!doc) {
       throw ApiError.notFound('Title not found for this name');
     }
     normalizedType = doc.mediaType || normalizedType;
     numericId = doc.tmdbId;
   } else {
-    doc = await Title.findOne({ mediaType: normalizedType, tmdbId: numericId });
+    // If the URL parameter is a pure number (like `/movie/24`, `/movie/83`, `/movie/96`, `/movie/300`, `/movie/1917`, `/movie/2012`)
+    // and was NOT explicitly requested via `?byId=true`, check if MongoDB has a movie whose exact title is that number!
+    if (!explicitById) {
+      const exactNumericTitleDoc = await Title.findOne({
+        mediaType: normalizedType,
+        $or: [
+          { title: rawParamStr },
+          { originalTitle: rawParamStr },
+        ],
+      }).sort({ popularity: -1, voteCount: -1 });
+      if (exactNumericTitleDoc) {
+        doc = exactNumericTitleDoc;
+        numericId = exactNumericTitleDoc.tmdbId;
+      }
+    }
+    if (!doc) {
+      doc = await Title.findOne({ mediaType: normalizedType, tmdbId: numericId });
+    }
   }
 
   const needsSeasonEnrichment =

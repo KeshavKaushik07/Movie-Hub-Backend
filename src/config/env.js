@@ -4,10 +4,11 @@ dotenv.config({ quiet: true });
 
 const e = process.env;
 const num = (v, fallback) => (Number.isFinite(Number(v)) && v !== undefined && v !== '' ? Number(v) : fallback);
+const isProd = e.NODE_ENV === 'production';
 
 const env = {
-  isProd: e.NODE_ENV === 'production',
-  nodeEnv:e.NODE_ENV,
+  isProd,
+  nodeEnv: e.NODE_ENV,
   port: num(e.PORT, 5000),
   mongoUri: e.MONGO_URI,
   origins: (e.CORS_ORIGINS || e.CLIENT_URL || 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean),
@@ -18,7 +19,11 @@ const env = {
     accessTtl: `${num(e.ACCESS_TOKEN_TTL_MINUTES, 120)}m`,
     refreshDays: num(e.REFRESH_TOKEN_TTL_DAYS, 30),
   },
-  cookie: { sameSite: e.COOKIE_SAMESITE || 'lax', domain: e.COOKIE_DOMAIN || undefined },
+  // In production (Vercel frontend + Render backend), SameSite must default to 'none' (with Secure: true) so cross-origin cookies are accepted
+  cookie: {
+    sameSite: e.COOKIE_SAMESITE || (isProd ? 'none' : 'lax'),
+    domain: e.COOKIE_DOMAIN || undefined,
+  },
   bcryptRounds: num(e.BCRYPT_ROUNDS, 12),
   maxAttempts: num(e.MAX_LOGIN_ATTEMPTS, 5),
   lockMinutes: num(e.LOCK_TIME_MINUTES, 15),

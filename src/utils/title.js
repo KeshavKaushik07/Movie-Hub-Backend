@@ -32,7 +32,8 @@ export const normalizeMediaType = (rawType = '') => {
   return clean;
 };
 
-// Reads /titles/:type/:tmdbId from the URL. Accepts EITHER a numeric TMDB ID OR a title slug (e.g. /titles/movie/mirzapur)
+// Reads /titles/:type/:tmdbId from the URL.
+// Supports both explicit TMDB IDs (?byId=true) and title slugs (including numeric titles like "24", "83", "96", "300", "1917", or titles ending in numbers like "super-30", "article-15", "blade-runner-2049").
 export const parseTitle = (req) => {
   const rawType = String(req.params.type || '').toLowerCase().trim();
   const type = normalizeMediaType(rawType);
@@ -45,18 +46,25 @@ export const parseTitle = (req) => {
     throw ApiError.badRequest('Missing title identifier');
   }
 
+  const bySlug = req.query?.bySlug === 'true';
+  const byId = req.query?.byId === 'true';
+
   const numId = Number(rawParam);
-  if (Number.isInteger(numId) && numId > 0 && /^\d+$/.test(rawParam)) {
-    return { type, tmdbId: numId, slug: null, isSlug: false };
+  if (!bySlug && Number.isInteger(numId) && numId > 0 && /^\d+$/.test(rawParam)) {
+    return {
+      type,
+      tmdbId: numId,
+      slug: rawParam.toLowerCase(),
+      isSlug: false,
+      explicitById: byId,
+    };
   }
 
-  const trailingMatch = rawParam.match(/-(\d{2,10})$/);
-  if (trailingMatch) {
-    const extracted = Number(trailingMatch[1]);
-    if (Number.isInteger(extracted) && extracted > 0) {
-      return { type, tmdbId: extracted, slug: rawParam.toLowerCase(), isSlug: false };
-    }
-  }
-
-  return { type, tmdbId: null, slug: rawParam.toLowerCase(), isSlug: true };
+  return {
+    type,
+    tmdbId: null,
+    slug: rawParam.toLowerCase(),
+    isSlug: true,
+    explicitById: false,
+  };
 };
